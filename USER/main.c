@@ -1,0 +1,225 @@
+/****************************************Copyright (c)****************************************************
+**                                      
+**                                 http://www.powermcu.com
+**
+**--------------File Info---------------------------------------------------------------------------------
+** File name:               main.c
+** Descriptions:            The FreeRTOS application function
+**
+**--------------------------------------------------------------------------------------------------------
+** Created by:              AVRman
+** Created date:            2010-11-8
+** Version:                 v1.0
+** Descriptions:            The original version
+**
+**--------------------------------------------------------------------------------------------------------
+** Modified by:             
+** Modified date:           
+** Version:                 
+** Descriptions:            
+**
+*********************************************************************************************************/
+
+/* Includes ------------------------------------------------------------------*/
+#include  <stdio.h>
+
+#include "stm32f10x.h"
+#include "FreeRTOS.h"
+#include "task.h"
+
+#include "mod_drive.h"
+#include "mod_console.h"
+#include "mod_signaling_led.h"
+#include "mod_radio_control.h"
+#include "mod_sensors.h"
+#include "mod_lcd.h"
+#include "mod_i2c.h"
+
+/* Private define ------------------------------------------------------------*/
+#define RADIO_CONTROL_TASK_STACK_SIZE     ( configMINIMAL_STACK_SIZE )
+#define RADIO_CONTROL_TASK_PRIORITY       ( tskIDLE_PRIORITY + 5 )
+
+#define DRIVE_CONTROL_TASK_STACK_SIZE     ( configMINIMAL_STACK_SIZE )
+#define DRIVE_CONTROL_TASK_PRIORITY       ( tskIDLE_PRIORITY + 4 )
+
+#define LED_SIGNALING_TASK_STACK_SIZE     ( configMINIMAL_STACK_SIZE )
+#define LED_SIGNALING_TASK_PRIORITY       ( tskIDLE_PRIORITY + 2 )
+
+#define CONSOLE_INTERFACE_TASK_STACK_SIZE ( configMINIMAL_STACK_SIZE )
+#define CONSOLE_INTERFACE_TASK_PRIORITY   ( tskIDLE_PRIORITY + 2 )
+
+#define SENSORS_SERVICE_TASK_STACK_SIZE   ( configMINIMAL_STACK_SIZE )
+#define SENSORS_SERVICE_TASK_PRIORITY     ( tskIDLE_PRIORITY + 3 )
+
+#define LCD_INITERFACE_TASK_STACK_SIZE   ( configMINIMAL_STACK_SIZE )
+#define LCD_INTERFACE_TASK_PRIORITY      ( tskIDLE_PRIORITY + 3 )
+
+
+/* Private function prototypes -----------------------------------------------*/
+static void prvSetupHardware(void);
+static void vRCC_configuration(void);
+static void vNVIC_configuration(void);
+
+/*******************************************************************************
+* Function Name  : main
+* Description    : Main program
+* Input          : None
+* Output         : None
+* Return         : None
+* Attention		 : None
+*******************************************************************************/
+int main(void)
+{
+    prvSetupHardware();
+
+    xTaskCreate(vRadio_Control, (signed char *) "Radio control",
+        RADIO_CONTROL_TASK_STACK_SIZE, NULL, RADIO_CONTROL_TASK_PRIORITY, NULL);
+        
+    xTaskCreate(vDrive_Control, (signed char *) "Drive control",
+        DRIVE_CONTROL_TASK_STACK_SIZE, NULL, DRIVE_CONTROL_TASK_PRIORITY, NULL);
+        
+    xTaskCreate(vLedSignalingTask, (signed char *) "LED Signaling",
+        LED_SIGNALING_TASK_STACK_SIZE, NULL, LED_SIGNALING_TASK_PRIORITY, NULL);
+        
+    xTaskCreate(vConsoleInterfaceTask, (signed char *) "Console",
+        CONSOLE_INTERFACE_TASK_STACK_SIZE, NULL, CONSOLE_INTERFACE_TASK_PRIORITY, NULL);
+        
+    xTaskCreate(vSensorsServiceTask, (signed char *) "Sensors",
+        SENSORS_SERVICE_TASK_STACK_SIZE, NULL, SENSORS_SERVICE_TASK_PRIORITY, NULL);
+
+    xTaskCreate(vLcdInterfaceTask, (signed char *) "LCD",
+        LCD_INITERFACE_TASK_STACK_SIZE, NULL, LCD_INTERFACE_TASK_PRIORITY, NULL);
+        
+    /* Start the scheduler. */
+    vTaskStartScheduler();
+
+    return 0;
+}
+
+
+/*******************************************************************************
+* Function Name  : prvSetupHardware
+* Description    : None
+* Input          : None
+* Output         : None
+* Return         : None
+* Attention		 : None
+*******************************************************************************/
+static void prvSetupHardware(void)
+{
+    vSemaphoreCreateBinary(xSemaphLedSignal);
+
+    vRCC_configuration();
+    vNVIC_configuration();
+    vUSB_configuration();
+    vI2C_configuration();
+}
+
+static void vRCC_configuration(void) 
+{ 
+    /* configuration of clock signals */
+    ErrorStatus HSEStartUpStatus; 
+    
+    /* RCC full reset */
+    RCC_DeInit(); 
+    
+    /* activate HSE (External High Speed oscillator): 8 MHz */                                                        
+    RCC_HSEConfig(RCC_HSE_ON);                                      
+    HSEStartUpStatus = RCC_WaitForHSEStartUp();  
+                 
+    if(HSEStartUpStatus == SUCCESS) 
+    { 
+        /* set up FLASH */
+        FLASH_SetLatency(FLASH_Latency_2);
+        FLASH_PrefetchBufferCmd(FLASH_PrefetchBuffer_Enable);
+
+        /* configure prescalers */                                                                    
+        RCC_HCLKConfig(RCC_SYSCLK_Div1);                          //set HCLK=SYSCLK 
+        RCC_PCLK2Config(RCC_HCLK_Div1);                           //set PCLK2=HCLK 
+        RCC_PCLK1Config(RCC_HCLK_Div2);                           //set PCLK1=HCLK/2
+        RCC_ADCCLKConfig(RCC_PCLK2_Div6);                         //adjust ADC frequency to 72MHz/6 = 12MHz
+        /* Select USBCLK source for 48 MHz to USB OTG FS*/
+        RCC_USBCLKConfig(RCC_USBCLKSource_PLLCLK_1Div5);          //adjust USB frequency to 72MHz/1.5 = 48MHz
+       
+        /* set up PLL for max nominal speed 72 MHz*/
+        RCC_PLLConfig(RCC_PLLSource_HSE_Div1, RCC_PLLMul_9);      //set PLLCLK = HSE*9 -> 8MHz*9 = 72 MHz 
+        
+        /* Activate PLL */
+        RCC_PLLCmd(ENABLE);                                       
+        while(RCC_GetFlagStatus(RCC_FLAG_PLLRDY) == RESET);
+
+        /* set up SYSCLK */
+        RCC_SYSCLKConfig(RCC_SYSCLKSource_PLLCLK);                 //SYSCLK = PLLCLK => 72 MHz
+        while(RCC_GetSYSCLKSource() != 0x08);
+        
+        /* Configure HCLK clock as SysTick clock source. */
+        SysTick_CLKSourceConfig( SysTick_CLKSource_HCLK );
+    } 
+    else 
+    { 
+        /* signalization of RCC startup malfunction: STATUS LED*/
+        while(1);
+    }                     
+}
+
+static void vNVIC_configuration(void)
+{
+    NVIC_InitTypeDef NVIC_InitStructure;
+
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_3);
+
+    //interruption for USB
+    NVIC_InitStructure.NVIC_IRQChannel                   = USB_LP_CAN1_RX0_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+    
+    // interruption for radio RF usart
+    NVIC_InitStructure.NVIC_IRQChannel                   = USART1_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+    
+    // interruption for distance sensor time measurements
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_3);
+    NVIC_InitStructure.NVIC_IRQChannel                   = TIM4_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 2;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+    
+    // interruption for ADC external trigger
+    NVIC_InitStructure.NVIC_IRQChannel                   = TIM1_CC_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
+
+
+#ifdef  USE_FULL_ASSERT
+
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *   where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t* file, uint32_t line)
+{ 
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+
+  /* Infinite loop */
+  while (1)
+  {
+  }
+}
+#endif
+
+/*********************************************************************************************************
+      END FILE
+*********************************************************************************************************/
