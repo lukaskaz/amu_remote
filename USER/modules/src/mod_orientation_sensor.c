@@ -568,7 +568,7 @@ void ADXL_getAxesOffset(Vector_t *v)
 }
 
 
-
+//auxiliary functions
 static uint32_t constrain(int32_t x, int32_t a, int32_t b)
 {
     if(x < a) {
