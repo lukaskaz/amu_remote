@@ -399,10 +399,12 @@ void vLcdInterfaceTask(void * pvArg)
         lcdControlData_t lcdData = {0};
     
         //gyro_get_data(&gyroData);
-        //accl_get_data(&acclData);
-        //printf("Accl dev: %.2f, %.2f, %.2f, %d\r\n", acclData.vect.x, acclData.vect.y, acclData.vect.z, acclData.event);
+        accl_get_data(&acclData);
+        printf("Accl dev: %.2f, %.2f, %.2f, %d, %d, %f, %f\r\n", 
+            acclData.vect.x, acclData.vect.y, acclData.vect.z, acclData.event, 
+                ADXL_getAxesTapDetection(), ADXL_getTapThreshold(), ADXL_getTapDuration());
         //printf("Gyro dev: %.2f, %.2f, %.2f\r\n", gyroData.x, gyroData.y, gyroData.z);
-        //vTaskDelay(1000);
+        vTaskDelay(1000);
         
         if(xQueueReceive(xQueueLcdControl, &lcdData, 50U) == pdTRUE) {
             xTimerStart(xTimer, 0);
@@ -440,19 +442,19 @@ void vLcdInterfaceTask(void * pvArg)
             }
         }
         else {
-            static uint8_t previousEvent = 0;
-            
-            gyro_get_data(&gyroData);
-            accl_get_data(&acclData);
-            
-            if(previousEvent != acclData.event) {
-                lcdData.operation = LCD_OP_COLLISION;
-                lcdData.state = acclData.event;
-                    
-                xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
-            }
-            
-            previousEvent = acclData.event;
+//            static uint8_t previousEvent = 0;
+//            
+//            gyro_get_data(&gyroData);
+//            accl_get_data(&acclData);
+//            
+//            if(previousEvent != acclData.event) {
+//                lcdData.operation = LCD_OP_COLLISION;
+//                lcdData.state = acclData.event;
+//                    
+//                xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
+//            }
+//            
+//            previousEvent = acclData.event;
         }
         if(startScrSaver == true) {
             startScrSaver = false;

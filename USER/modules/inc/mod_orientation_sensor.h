@@ -23,5 +23,9 @@ typedef struct {
 void vOrientation_sensor_configuration(void);
 void gyro_get_data(Vector_t *data);
 void accl_get_data(AcclData_t *data);
+uint8_t ADXL_getAxesTapDetection(void);
+
+double ADXL_getTapDuration(void);
+double ADXL_getTapThreshold(void);
 
 #endif

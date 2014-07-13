@@ -59,8 +59,15 @@ REGISTERS
                                         
 #define ADXL345_INT_TAP                  0x40 // Enable interrupt when device is tapped once
 #define ADXL345_INT_DATA                 0x80 // Enable interrupt when data is available
-                                         
-#define ADXL345_MG2G_MULTIPLIER         (0.004)   // 4mg per lsb
+#define ADXL345_X_TAP_AXIS               0x04
+#define ADXL345_Y_TAP_AXIS               0x02
+#define ADXL345_Z_TAP_AXIS               0x01
+#define ADXL345_DTAP_SUPPRESS_BIT        0x08
+
+#define ADXL345_OFFSET_X                 (-0.07f)
+#define ADXL345_OFFSET_Y                 0.07f
+#define ADXL345_OFFSET_Z                 0.16f
+#define ADXL345_MG2G_MULTIPLIER          (0.004)   // 4mg per lsb
 /* Constants */
 #define SENSORS_GRAVITY_EARTH           (9.80665F) /**< Earth's gravity in m/s^2 */
 #define SENSORS_GRAVITY_MOON            (1.6F) /**< The moon's gravity in m/s^2 */
@@ -94,6 +101,11 @@ REGISTERS
 #define GYRO_OFFSET_Z           (-16)
 #define GYRO_SENSITIVITY        14.375F
 
+typedef struct {
+    int16_t x;
+    int16_t y;
+    int16_t z;
+} VectorInt_t;
 
 /* Used with register 0x31 (ADXL345_REG_DATA_FORMAT) to set g range */
 typedef enum
@@ -132,6 +144,7 @@ static uint8_t ITG3205_LowPassFilter(uint8_t sett);
 static uint8_t ITG3205_InterruptConf(uint8_t sett);
 static bool ITG3205_isInterruptRawDataReady(void);
 static bool ITG3205_isInterruptDeviceReady(void);
+static void ITG3205_getXYZ(VectorInt_t *vi);
 static int16_t ITG3205_getX(void);
 static int16_t ITG3205_getY(void);
 static int16_t ITG3205_getZ(void);
@@ -144,32 +157,45 @@ dataRate_t ADXL_getDataRate(void);
 static uint8_t ADXL_setDataRate(dataRate_t dataRate);
 static uint8_t ADXL_setInterrupts(uint8_t interrupts);
 static uint8_t ADXL_getInterruptStatus(void);
+static void ADXL_getXYZ(VectorInt_t *vi);
 static int16_t ADXL_getX(void);
 static int16_t ADXL_getY(void);
 static int16_t ADXL_getZ(void);
 static uint8_t ADXL_setTapThreshold(double threshold);
-static double ADXL_getTapThreshold(void);
+//static double ADXL_getTapThreshold(void);
 static uint8_t ADXL_setTapDuration(double duration);
-static double ADXL_getTapDuration(void);
-void ADXL_setTapDetectionXYZ(bool state);
+//static double ADXL_getTapDuration(void);
+static void ADXL_setAxesTapDetection(bool state, uint8_t axes);
+//static uint8_t ADXL_getAxesTapDetection(void);
+static void ADXL_setAxesOffset(const Vector_t *v);
+static void ADXL_getAxesOffset(Vector_t *v);
 
-static uint32_t constrain(uint32_t x, uint32_t a, uint32_t b);
+static uint32_t constrain(int32_t x, int32_t a, int32_t b);
+
 
 void vOrientation_sensor_configuration(void)
 {
     uint8_t ADXL_deviceID = 0, ITG3205_deviceID = 0;
     
     ADXL_deviceID = ADXL_getDeviceID();
-    ADXL_powerMgmt(0x08);
-    ADXL_setRange(ADXL345_RANGE_2_G);
-    ADXL_setDataRate(ADXL345_DATARATE_25_HZ);
-    ADXL_setInterrupts(ADXL345_INT_TAP|ADXL345_INT_DATA);
-    ADXL_setTapThreshold(2);
-    ADXL_setTapDuration(0.02);
-    ADXL_setTapDetectionXYZ(1);
+    if(ADXL_deviceID == 0xE5) {
+        Vector_t xyzOffsetVect = { ADXL345_OFFSET_X, ADXL345_OFFSET_Y, ADXL345_OFFSET_Z };
+
+        ADXL_powerMgmt(0x08);
+        ADXL_setRange(ADXL345_RANGE_4_G);
+        ADXL_setDataRate(ADXL345_DATARATE_25_HZ);
+        ADXL_setInterrupts(ADXL345_INT_TAP|ADXL345_INT_DATA);
+        ADXL_setTapThreshold(4);
+        ADXL_setTapDuration(0.05);
+        ADXL_setAxesTapDetection(true, ADXL345_Y_TAP_AXIS | ADXL345_Z_TAP_AXIS);
+        ADXL_setAxesOffset(&xyzOffsetVect);
+    }
+    else {
+        // sensor not detected 
+        // ToDo: implement error service for this case
+    }
     
     ITG3205_deviceID = ITG3205_getDeviceID();
-    
     if(ITG3205_deviceID == 0x68) {
         ITG3205_powerMgmt(0);
         ITG3205_SampleRateDiv(0x31);
@@ -187,9 +213,12 @@ void gyro_get_data(Vector_t *data)
     while(ITG3205_isInterruptRawDataReady() != true);
 
     if(data != NULL) {
-        data->x = (ITG3205_getX() + GYRO_OFFSET_X)/GYRO_SENSITIVITY;
-        data->y = (ITG3205_getY() + GYRO_OFFSET_Y)/GYRO_SENSITIVITY;
-        data->z = (ITG3205_getZ() + GYRO_OFFSET_Z)/GYRO_SENSITIVITY;
+        VectorInt_t v = {0};
+    
+        ITG3205_getXYZ(&v);
+        data->x = (v.x + GYRO_OFFSET_X)/GYRO_SENSITIVITY;
+        data->y = (v.y + GYRO_OFFSET_Y)/GYRO_SENSITIVITY;
+        data->z = (v.z + GYRO_OFFSET_Z)/GYRO_SENSITIVITY;
     }
 }
 
@@ -209,9 +238,12 @@ void accl_get_data(AcclData_t *data)
     }
 
     if(data != NULL) {
-        data->vect.x = ADXL_getX() * ADXL345_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
-        data->vect.y = ADXL_getY() * ADXL345_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
-        data->vect.z = ADXL_getZ() * ADXL345_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
+        VectorInt_t v = {0};
+
+        ADXL_getXYZ(&v);
+        data->vect.x = v.x * ADXL345_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
+        data->vect.y = v.y * ADXL345_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
+        data->vect.z = v.z * ADXL345_MG2G_MULTIPLIER * SENSORS_GRAVITY_STANDARD;
         data->event = event; 
     }
 }
@@ -272,6 +304,17 @@ static bool ITG3205_isInterruptDeviceReady(void)
     reg[0] = GYRO_REG_INT_STS;
     xI2C_read_sequence(GYRO_ADDRESS, reg, 1, &reg[1], 1);
     return (reg[1] & GYRO_INT_READY) == GYRO_INT_READY;
+}
+
+static void ITG3205_getXYZ(VectorInt_t *vi)
+{
+    uint8_t reg[7];
+    reg[0] = GYRO_REG_X_H;
+    xI2C_read_sequence(GYRO_ADDRESS, reg, 1, &reg[1], 6);
+
+    vi->x = reg[2] | (reg[1]<<8);
+    vi->y = reg[4] | (reg[3]<<8);
+    vi->z = reg[6] | (reg[5]<<8);
 }
 
 static int16_t ITG3205_getX(void)
@@ -379,6 +422,17 @@ static uint8_t ADXL_getInterruptStatus(void)
     return reg[1];
 }
 
+static void ADXL_getXYZ(VectorInt_t *vi)
+{
+    uint8_t reg[7];
+    reg[0] = ADXL345_REG_DATAX0;
+    xI2C_read_sequence(ADXL345_ADDRESS, reg, 1, &reg[1], 6);
+
+    vi->x = reg[1] | (reg[2]<<8);
+    vi->y = reg[3] | (reg[4]<<8);
+    vi->z = reg[5] | (reg[6]<<8);
+}
+
 static int16_t ADXL_getX(void)
 {
     uint8_t reg[3];
@@ -415,7 +469,7 @@ static uint8_t ADXL_setTapThreshold(double threshold)
 }
 
 // Get Tap Threshold (62.5mg / LSB)
-static double ADXL_getTapThreshold(void)
+double ADXL_getTapThreshold(void)
 {
     uint8_t reg[2];
     reg[0] = ADXL345_REG_THRESH_TAP;
@@ -436,7 +490,7 @@ static uint8_t ADXL_setTapDuration(double duration)
 }
 
 // Get Tap Duration (625us / LSB)
-static double ADXL_getTapDuration(void)
+double ADXL_getTapDuration(void)
 {
     uint8_t reg[2];
     reg[0] = ADXL345_REG_DUR;
@@ -444,19 +498,24 @@ static double ADXL_getTapDuration(void)
     return reg[1] * 0.000625f;
 }
 
-void ADXL_setTapDetectionXYZ(bool state)
+static void ADXL_setAxesTapDetection(bool state, uint8_t axes)
 {
     uint8_t reg[2];
-    uint8_t value;
-    reg[0] = ADXL345_REG_TAP_AXES;
-    xI2C_read_sequence(ADXL345_ADDRESS, reg, 1, &reg[1], 1);
+    uint8_t value = 0;
 
     if (state)
     {
-        value = reg[1] | 0x07;
-        value |= 0x08;      // suppress double tap, do not need this event
-    } else
-    {
+        if(axes > 7) {
+            // enable all axes
+            value = (ADXL345_X_TAP_AXIS|ADXL345_Y_TAP_AXIS|ADXL345_Z_TAP_AXIS);
+        }
+        else {
+            value = axes;
+        }
+        
+        value |= ADXL345_DTAP_SUPPRESS_BIT;      // suppress double tap, do not need this event
+    }
+    else {
         value = reg[1] & 0xF8;
     }
 
@@ -465,7 +524,52 @@ void ADXL_setTapDetectionXYZ(bool state)
     xI2C_write_sequence(ADXL345_ADDRESS, reg, 2);
 }
 
-static uint32_t constrain(uint32_t x, uint32_t a, uint32_t b)
+uint8_t ADXL_getAxesTapDetection(void)
+{
+    uint8_t reg[2];
+    uint8_t value;
+    reg[0] = ADXL345_REG_TAP_AXES;
+    xI2C_read_sequence(ADXL345_ADDRESS, reg, 1, &reg[1], 1);
+
+    return reg[1];
+}
+
+static void ADXL_setAxesOffset(const Vector_t *v)
+{
+    uint8_t buff[4];
+    int32_t value = 0;
+
+    buff[0] = ADXL345_REG_OFSX;
+
+    value = (int32_t)(v->x/0.015625f);
+    value = constrain( (uint8_t)value, 0, 255 );
+    buff[1] = value;
+
+    value = (int32_t)(v->y/0.015625f);
+    value = constrain( (uint8_t)value, 0, 255 );
+    buff[2] = value;
+    
+    value = (int32_t)(v->z/0.015625f);
+    value = constrain( (uint8_t)value, 0, 255 );
+    buff[3] = value;
+
+    xI2C_write_sequence(ADXL345_ADDRESS, buff, 4);
+}
+
+void ADXL_getAxesOffset(Vector_t *v)
+{
+    uint8_t reg[4];
+    reg[0] = ADXL345_REG_OFSX;
+    xI2C_read_sequence(ADXL345_ADDRESS, reg, 1, &reg[1], 3);
+    
+    v->x = (int8_t)reg[1] * 0.015625f;
+    v->y = (int8_t)reg[2] * 0.015625f;
+    v->z = (int8_t)reg[3] * 0.015625f;
+}
+
+
+
+static uint32_t constrain(int32_t x, int32_t a, int32_t b)
 {
     if(x < a) {
         return a;
