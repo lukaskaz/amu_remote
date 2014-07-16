@@ -33,9 +33,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include "timers.h"
 
 typedef enum {
-    RADIO_OP_UNDEF = 0,
+    RADIO_OP_NONE = 0,
     RADIO_OP_DRIVE,
     RADIO_OP_LIGHTING,
     RADIO_OP_SOUND_SIG,
@@ -44,6 +45,8 @@ typedef enum {
 
 void vRadio_Configuration(void);
 
+xSemaphoreHandle xSemaphRadioPacketReady = NULL;
+bool startRadioRefresh = false;
 radioData_t radioData = {0};
 
 
@@ -84,14 +87,24 @@ void vRadio_Configuration(void)
     USART_Cmd(USART1, ENABLE);
 }
 
+void vRadioRefreshCallback(xTimerHandle pxTimer)
+{
+    startRadioRefresh = true;
+}
 
 void vRadio_Control(void *pvArg)
 {
-    vRadio_Configuration();
-    while(1) {
+    xTimerHandle xRadioRefreshTimer;
+    uint8_t lastOperation = RADIO_OP_NONE;
 
-        if(radio_packet_ready == true) {
-            radio_packet_ready = false;
+    vRadio_Configuration();
+
+    xRadioRefreshTimer = xTimerCreate((signed char *)"Radio refresh timer", 50, pdFALSE, (void *)3, vRadioRefreshCallback);
+    while(1) {
+        lcdControlData_t lcdData = {0};
+    
+        if(xSemaphoreTake(xSemaphRadioPacketReady, 10/portTICK_RATE_MS) == pdTRUE) {
+            xTimerStart(xRadioRefreshTimer, 0);
 
             if(radioData.operations.payload.function == RADIO_OP_DRIVE) {
                 driveControlData_t driveControlData = {0};
@@ -108,25 +121,13 @@ void vRadio_Control(void *pvArg)
                 vLighting_RF_Control(radioData.operations.payload.lightingData.lightingType, radioData.operations.payload.lightingData.lightingState);
             }
             else if(radioData.operations.payload.function == RADIO_OP_SOUND_SIG) {
-                lcdControlData_t lcdData = {0};
-                vSound_Signal_RF_Control(radioData.operations.payload.soundSignalData.soundSignalStatus);
-                
                 // new packet should be received within 40ms (set 10ms more for safety)
-                // wait to decide whether sound signal should be kept activated
-                vTaskDelay(50);
-                if(radio_packet_ready == true && radioData.operations.payload.function == RADIO_OP_SOUND_SIG) {
-                    // next signal package came, keep sound signal activated
+                // trigger timer to disable sound signal when 50ms time is depleted and on signal is not sustained
+                if(lastOperation != RADIO_OP_SOUND_SIG) {
+                    vSound_Signal_RF_Control(radioData.operations.payload.soundSignalData.soundSignalStatus);
                     lcdData.operation = LCD_OP_SOUND_SIG;
                     lcdData.state = LCD_SOUND_ON;
                 }
-                else {
-                    // there is no sound signal package received so suppress horn
-                    vSound_Signal_RF_Control(SOUND_RF_NONE);
-                    lcdData.operation = LCD_OP_SOUND_SIG;
-                    lcdData.state = LCD_SOUND_OFF;
-                }
-                
-                xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
             }
             else if(radioData.operations.payload.function == RADIO_OP_HEARTBEAT) {
                 // heartbeat signal for diagnosis purpuses on controller side, do nothing
@@ -135,10 +136,26 @@ void vRadio_Control(void *pvArg)
                 // unsupported case, do nothing
             }
             
+            lastOperation = radioData.operations.payload.function;
             //printf("Sig: %d, %d\r\n", radioData.operations.payload.function, radioData.operations.payload.soundSignalData.soundSignalStatus);
         }
+        else if(startRadioRefresh == true) {
+            startRadioRefresh = false;
+
+            if(lastOperation == RADIO_OP_SOUND_SIG) {
+                // there is no sound signal package received so suppress horn
+                vSound_Signal_RF_Control(SOUND_RF_NONE);
+                lcdData.operation = LCD_OP_SOUND_SIG;
+                lcdData.state = LCD_SOUND_OFF;
+                lastOperation = RADIO_OP_NONE;
+            }
+        }
         else {
-            vTaskDelay(10);
+            // no action defined
+        }
+        
+        if(lcdData.operation != LCD_OP_NONE) {
+            xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
         }
     }
 }

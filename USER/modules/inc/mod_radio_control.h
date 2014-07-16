@@ -8,6 +8,8 @@
 #define MOD_RADIO_CONTROL_H
 
 #include "stm32f10x.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
 
 #define RADIO_FRAME_SIZE              17U
 #define RADIO_PAYLOAD_SIZE            10U
@@ -52,5 +54,6 @@ typedef union {
 void vRadio_Control(void *pvArg);
 
 extern radioData_t radioData;
+extern xSemaphoreHandle xSemaphRadioPacketReady;
 
 #endif

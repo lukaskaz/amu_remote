@@ -51,8 +51,8 @@
 #define SENSORS_SERVICE_TASK_STACK_SIZE   ( configMINIMAL_STACK_SIZE )
 #define SENSORS_SERVICE_TASK_PRIORITY     ( tskIDLE_PRIORITY + 3 )
 
-#define LCD_INITERFACE_TASK_STACK_SIZE   ( configMINIMAL_STACK_SIZE )
-#define LCD_INTERFACE_TASK_PRIORITY      ( tskIDLE_PRIORITY + 3 )
+#define LCD_INTERFACE_TASK_STACK_SIZE     ( configMINIMAL_STACK_SIZE )
+#define LCD_INTERFACE_TASK_PRIORITY       ( tskIDLE_PRIORITY + 3 )
 
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,7 +71,7 @@ static void vNVIC_configuration(void);
 int main(void)
 {
     prvSetupHardware();
-
+        
     xTaskCreate(vRadio_Control, (signed char *) "Radio control",
         RADIO_CONTROL_TASK_STACK_SIZE, NULL, RADIO_CONTROL_TASK_PRIORITY, NULL);
         
@@ -83,12 +83,13 @@ int main(void)
         
     xTaskCreate(vConsoleInterfaceTask, (signed char *) "Console",
         CONSOLE_INTERFACE_TASK_STACK_SIZE, NULL, CONSOLE_INTERFACE_TASK_PRIORITY, NULL);
-        
+
     xTaskCreate(vSensorsServiceTask, (signed char *) "Sensors",
         SENSORS_SERVICE_TASK_STACK_SIZE, NULL, SENSORS_SERVICE_TASK_PRIORITY, NULL);
 
     xTaskCreate(vLcdInterfaceTask, (signed char *) "LCD",
-        LCD_INITERFACE_TASK_STACK_SIZE, NULL, LCD_INTERFACE_TASK_PRIORITY, NULL);
+        LCD_INTERFACE_TASK_STACK_SIZE, NULL, LCD_INTERFACE_TASK_PRIORITY, NULL);
+
         
     /* Start the scheduler. */
     vTaskStartScheduler();
@@ -108,7 +109,15 @@ int main(void)
 static void prvSetupHardware(void)
 {
     vSemaphoreCreateBinary(xSemaphLedSignal);
+    vSemaphoreCreateBinary(xSemaphI2CLcdInitDone);
+    vSemaphoreCreateBinary(xSemaphRadioPacketReady);
+    xRecMutexI2CSequence = xSemaphoreCreateRecursiveMutex();
 
+    // semaphores are in ready state at start, so to release them have use take
+    xSemaphoreTake(xSemaphLedSignal, portMAX_DELAY);
+    xSemaphoreTake(xSemaphI2CLcdInitDone, portMAX_DELAY);
+    xSemaphoreTake(xSemaphRadioPacketReady, portMAX_DELAY);
+    
     vRCC_configuration();
     vNVIC_configuration();
     vUSB_configuration();
@@ -194,6 +203,13 @@ static void vNVIC_configuration(void)
     NVIC_InitStructure.NVIC_IRQChannel                   = TIM1_CC_IRQn;
     NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+
+    // interruption for power supply voltage detector
+    NVIC_InitStructure.NVIC_IRQChannel                   = PVD_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 1;
     NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 }

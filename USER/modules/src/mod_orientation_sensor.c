@@ -25,6 +25,9 @@
 #include "mod_orientation_sensor.h"
 #include "mod_i2c.h"
 
+#include "FreeRTOS.h"
+#include "task.h"
+
 
 /*=========================================================================
 I2C ADDRESS/BITS
@@ -57,17 +60,17 @@ REGISTERS
 #define ADXL345_REG_DATAZ0              (0x36)    // Z-axis data 0
 #define ADXL345_REG_DATAZ1              (0x37)    // Z-axis data 1
                                         
-#define ADXL345_INT_TAP                  0x40 // Enable interrupt when device is tapped once
-#define ADXL345_INT_DATA                 0x80 // Enable interrupt when data is available
-#define ADXL345_X_TAP_AXIS               0x04
-#define ADXL345_Y_TAP_AXIS               0x02
-#define ADXL345_Z_TAP_AXIS               0x01
-#define ADXL345_DTAP_SUPPRESS_BIT        0x08
+#define ADXL345_INT_TAP                 0x40 // Enable interrupt when device is tapped once
+#define ADXL345_INT_DATA                0x80 // Enable interrupt when data is available
+#define ADXL345_X_TAP_AXIS              0x04
+#define ADXL345_Y_TAP_AXIS              0x02
+#define ADXL345_Z_TAP_AXIS              0x01
+#define ADXL345_DTAP_SUPPRESS_BIT       0x08
 
-#define ADXL345_OFFSET_X                 (-0.07f)
-#define ADXL345_OFFSET_Y                 0.07f
-#define ADXL345_OFFSET_Z                 0.16f
-#define ADXL345_MG2G_MULTIPLIER          (0.004)   // 4mg per lsb
+#define ADXL345_OFFSET_X                (-0.07f)
+#define ADXL345_OFFSET_Y                0.07f
+#define ADXL345_OFFSET_Z                0.16f
+#define ADXL345_MG2G_MULTIPLIER         (0.004)   // 4mg per lsb
 /* Constants */
 #define SENSORS_GRAVITY_EARTH           (9.80665F) /**< Earth's gravity in m/s^2 */
 #define SENSORS_GRAVITY_MOON            (1.6F) /**< The moon's gravity in m/s^2 */
@@ -75,31 +78,31 @@ REGISTERS
 #define SENSORS_GRAVITY_STANDARD        (SENSORS_GRAVITY_EARTH)
 
 
-#define GYRO_ADDRESS            0x68
+#define GYRO_ADDRESS                    0x68
 
-#define GYRO_REG_WHOAMI         0x00
-#define GYRO_REG_SMPLRT_DIV     0x15
-#define GYRO_REG_DLPF_FS        0x16
-#define GYRO_REG_INT_CFG        0x17
-#define GYRO_REG_INT_STS        0X1A
-
-#define GYRO_REG_TEMP_H         0x1B
-#define GYRO_REG_TEMP_L         0x1C
-#define GYRO_REG_X_H            0x1D
-#define GYRO_REG_X_L            0x1E
-#define GYRO_REG_Y_H            0x1F
-#define GYRO_REG_Y_L            0x20
-#define GYRO_REG_Z_H            0x21
-#define GYRO_REG_Z_L            0x22
-#define GYRO_REG_PWR_MGM        0x3E
-
-#define GYRO_INT_READY          0x04 // Enable interrupt when device is ready
-#define GYRO_INT_DATA           0x01 // Enable interrupt when data is available
-
-#define GYRO_OFFSET_X           19
-#define GYRO_OFFSET_Y           (-7)
-#define GYRO_OFFSET_Z           (-16)
-#define GYRO_SENSITIVITY        14.375F
+#define GYRO_REG_WHOAMI                 0x00
+#define GYRO_REG_SMPLRT_DIV             0x15
+#define GYRO_REG_DLPF_FS                0x16
+#define GYRO_REG_INT_CFG                0x17
+#define GYRO_REG_INT_STS                0X1A
+        
+#define GYRO_REG_TEMP_H                 0x1B
+#define GYRO_REG_TEMP_L                 0x1C
+#define GYRO_REG_X_H                    0x1D
+#define GYRO_REG_X_L                    0x1E
+#define GYRO_REG_Y_H                    0x1F
+#define GYRO_REG_Y_L                    0x20
+#define GYRO_REG_Z_H                    0x21
+#define GYRO_REG_Z_L                    0x22
+#define GYRO_REG_PWR_MGM                0x3E
+        
+#define GYRO_INT_READY                  0x04 // Enable interrupt when device is ready
+#define GYRO_INT_DATA                   0x01 // Enable interrupt when data is available
+        
+#define GYRO_OFFSET_X                   19
+#define GYRO_OFFSET_Y                   (-7)
+#define GYRO_OFFSET_Z                   (-16)
+#define GYRO_SENSITIVITY                14.375F
 
 typedef struct {
     int16_t x;
@@ -176,35 +179,37 @@ static uint32_t constrain(int32_t x, int32_t a, int32_t b);
 void vOrientation_sensor_configuration(void)
 {
     uint8_t ADXL_deviceID = 0, ITG3205_deviceID = 0;
-    
-    ADXL_deviceID = ADXL_getDeviceID();
-    if(ADXL_deviceID == 0xE5) {
-        Vector_t xyzOffsetVect = { ADXL345_OFFSET_X, ADXL345_OFFSET_Y, ADXL345_OFFSET_Z };
 
-        ADXL_powerMgmt(0x08);
-        ADXL_setRange(ADXL345_RANGE_4_G);
-        ADXL_setDataRate(ADXL345_DATARATE_25_HZ);
-        ADXL_setInterrupts(ADXL345_INT_TAP|ADXL345_INT_DATA);
-        ADXL_setTapThreshold(4);
-        ADXL_setTapDuration(0.05);
-        ADXL_setAxesTapDetection(true, ADXL345_Y_TAP_AXIS | ADXL345_Z_TAP_AXIS);
-        ADXL_setAxesOffset(&xyzOffsetVect);
-    }
-    else {
-        // sensor not detected 
-        // ToDo: implement error service for this case
-    }
-    
-    ITG3205_deviceID = ITG3205_getDeviceID();
-    if(ITG3205_deviceID == 0x68) {
-        ITG3205_powerMgmt(0);
-        ITG3205_SampleRateDiv(0x31);
-        ITG3205_LowPassFilter(0x1E);
-        ITG3205_InterruptConf(0x05);
-    }
-    else {
-        // sensor is not detected
-        // ToDo: implement error service for the case
+    if(xSemaphoreTake(xSemaphI2CLcdInitDone, portMAX_DELAY) == pdTRUE) {
+        ADXL_deviceID = ADXL_getDeviceID();
+        if(ADXL_deviceID == 0xE5) {
+            Vector_t xyzOffsetVect = { ADXL345_OFFSET_X, ADXL345_OFFSET_Y, ADXL345_OFFSET_Z };
+
+            ADXL_powerMgmt(0x08);
+            ADXL_setRange(ADXL345_RANGE_8_G);
+            ADXL_setDataRate(ADXL345_DATARATE_25_HZ);
+            ADXL_setInterrupts(ADXL345_INT_TAP|ADXL345_INT_DATA);
+            ADXL_setTapThreshold(16);
+            ADXL_setTapDuration(0.01);
+            ADXL_setAxesTapDetection(true, ADXL345_Y_TAP_AXIS|ADXL345_Z_TAP_AXIS);
+            ADXL_setAxesOffset(&xyzOffsetVect);
+        }
+        else {
+            // sensor not detected 
+            // ToDo: implement error service for this case
+        }
+        
+        ITG3205_deviceID = ITG3205_getDeviceID();
+        if(ITG3205_deviceID == 0x68) {
+            ITG3205_powerMgmt(0);
+            ITG3205_SampleRateDiv(0x31);
+            ITG3205_LowPassFilter(0x1E);
+            ITG3205_InterruptConf(0x05);
+        }
+        else {
+            // sensor is not detected
+            // ToDo: implement error service for the case
+        }
     }
 }
 

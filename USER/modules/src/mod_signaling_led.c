@@ -26,7 +26,6 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include "semphr.h"
 
 typedef enum {
     LED_BRIGHTEN = 0,

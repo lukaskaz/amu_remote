@@ -47,7 +47,6 @@ void SysTick_Handler(void);
 
 
 extern volatile bool uart_data_sent;
-extern volatile bool radio_packet_ready;
 extern volatile bool distMeasReady;
 
 #ifdef __cplusplus

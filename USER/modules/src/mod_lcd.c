@@ -30,9 +30,6 @@
 #include "task.h"
 #include "timers.h"
 
-#include "mod_orientation_sensor.h"
-
-
 #define ZTSCI2CMX_DADDRESS    0x51
 #define ZTSCI2CMX_ADDRESS     0x27
 
@@ -74,7 +71,7 @@
 
 #define LCD_DATA_QUEUE_SIZE    10U
 
-static bool startScrSaver = false;
+static bool lcdStartScrSaver = false;
 
 xQueueHandle xQueueLcdControl = NULL;
 
@@ -320,47 +317,44 @@ static void ZtScI2cMxDisplayArea(uint8_t spage, uint8_t epage, uint8_t scolumn, 
     uint8_t addr = 0;
     uint8_t buff[32] = {0};
 
-    addr = ZTSCI2CMX_ADDRESS;
-    buff[0] = REG_DAT;
+    if(xSemaphoreTakeRecursive(xRecMutexI2CSequence, portMAX_DELAY) == pdTRUE) {
+        addr = ZTSCI2CMX_ADDRESS;
+        buff[0] = REG_DAT;
 
-    h = epage - spage;
-    w = ecolumn - scolumn;
-    while ( j<h )
-    {
-        uint8_t p=w;        
-        ZtScI2cMxSetLocation(spage + j, scolumn);
+        h = epage - spage;
+        w = ecolumn - scolumn;
+        while ( j<h ) {
+            uint8_t p = w;
+            ZtScI2cMxSetLocation(spage + j, scolumn);
 
-        while(p)
-        {
-            if(p>=31)
-            {
-                uint8_t n = 0;
-                for (n=0; n<31; n++)
-                {
-                    buff[1+n] = pt[cnt++];
+            while(p) {
+                if(p>=31) {
+                    uint8_t n = 0;
+                    for (n=0; n<31; n++) {
+                        buff[1+n] = pt[cnt++];
+                    }
+                    xI2C_write_sequence(addr, buff, 32);
+                    p -= 31;
                 }
-                xI2C_write_sequence(addr, buff, 32);
-                p -= 31;
-            }
-            else
-            {
-                int n;
-                for (n=0; n<p; n++)
-                {
-                    buff[1+n] = pt[cnt++];
+                else {
+                    int n;
+                    for (n=0; n<p; n++) {
+                        buff[1+n] = pt[cnt++];
+                    }
+                    xI2C_write_sequence(addr, buff, n+1);
+                    p -= n;
                 }
-                xI2C_write_sequence(addr, buff, n+1);
-                p -= n;
             }
+            j++;
         }
-        j++;
+
+        xSemaphoreGiveRecursive(xRecMutexI2CSequence);
     }
 }
 
-void vTimerCallback( xTimerHandle pxTimer )
+void vLcdScrSaverCallback(xTimerHandle pxTimer)
 {
-    printf("Timeout!!!\n\r");
-    startScrSaver = true;
+    lcdStartScrSaver = true;
 }
 
 /*******************************************************************************
@@ -373,55 +367,32 @@ void vTimerCallback( xTimerHandle pxTimer )
 *******************************************************************************/
 void vLcdInterfaceTask(void * pvArg)
 {
-    xTimerHandle xTimer;
+    xTimerHandle xLcdScrSaverTimer;
     vLCD_Configuration();
     xQueueLcdControl = xQueueCreate(LCD_DATA_QUEUE_SIZE, sizeof(lcdControlData_t));
 
-    vTaskDelay(10);
-    //ZtScI2cMxDisplayArea(ZTSCI2CMX_ADDRESS, 0, 8, 0, 128, robot);
-    
-    //vTaskDelay(2000);
-    //ZtScI2cMxDisplay8x16Str(ZTSCI2CMX_ADDRESS,0, 0, "Hello World! 0123456789");
-    //ZtScI2cMxDisplay8x16Str(ZTSCI2CMX_ADDRESS,2, 0, "ZT.SCI2CMx!");
-    //ZtScI2cMxDisplay8x16Str(ZTSCI2CMX_ADDRESS,4, 0, "Hi Guy @__@");
-    //ZtScI2cMxDisplay8x16Str(ZTSCI2CMX_ADDRESS,6, 0, "My OLED! *^_^*");
-    //vTaskDelay(2000);
-    
-    vOrientation_sensor_configuration();
-    xTimer = xTimerCreate((signed char *)"Timer", 10000, pdTRUE, (void *)1, vTimerCallback);
-    xTimerStart(xTimer, 0);
+    ZtScI2cMxDisplay8x16Str(2, 0, ">AMUv2 prototype");
+    ZtScI2cMxDisplay8x16Str(4, 0, "   Welcome :)   ");
+
+    xLcdScrSaverTimer = xTimerCreate((signed char *)"Lcd SS timer", 10000, pdFALSE, (void *)1, vLcdScrSaverCallback);
+    xTimerStart(xLcdScrSaverTimer, 0);
     
     while(1)
     { 
-        static int isDataDispalyed = false;
-        Vector_t gyroData = {0};
-        AcclData_t acclData = {0};
         lcdControlData_t lcdData = {0};
-    
-        //gyro_get_data(&gyroData);
-        accl_get_data(&acclData);
-        printf("Accl dev: %.2f, %.2f, %.2f, %d, %d, %f, %f\r\n", 
-            acclData.vect.x, acclData.vect.y, acclData.vect.z, acclData.event, 
-                ADXL_getAxesTapDetection(), ADXL_getTapThreshold(), ADXL_getTapDuration());
-        //printf("Gyro dev: %.2f, %.2f, %.2f\r\n", gyroData.x, gyroData.y, gyroData.z);
-        vTaskDelay(1000);
-        
+
         if(xQueueReceive(xQueueLcdControl, &lcdData, 50U) == pdTRUE) {
-            xTimerStart(xTimer, 0);
+            xTimerStart(xLcdScrSaverTimer, 0);
             
             if(lcdData.operation == LCD_OP_SOUND_SIG) {
                 if(lcdData.state == LCD_SOUND_ON) {
-                    if(isDataDispalyed == false) {
-                        isDataDispalyed = true;
-                        ZtScI2cMxFillArea(0, 8, 0, 128, 0x00);
-                        ZtScI2cMxDisplay8x16Str(3, 0, "  HORN ENABLED  ");
-                        vTaskDelay(2);
-                        ZtScI2cMxDeactivateScroll();
-                        ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
-                    }
+                    ZtScI2cMxFillArea(0, 8, 0, 128, 0x00);
+                    ZtScI2cMxDisplay8x16Str(3, 0, "  HORN ENABLED  ");
+                    vTaskDelay(2);
+                    ZtScI2cMxDeactivateScroll();
+                    ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
                 }
                 else {
-                    isDataDispalyed = false;
                     ZtScI2cMxDeactivateScroll();
                     ZtScI2cMxFillArea(0, 8, 0, 128, 0x00);
                 }
@@ -430,34 +401,20 @@ void vLcdInterfaceTask(void * pvArg)
                 if(lcdData.state == LCD_COLLIS_ON) {
                         ZtScI2cMxFillArea(0, 8, 0, 128, 0x00);
                         ZtScI2cMxDisplay8x16Str(3, 0, "  COLLISION !!  ");
-                        vTaskDelay(2);
-                        ZtScI2cMxDeactivateScroll();
-                        ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
-                        vTaskDelay(2000);
+                        ZtScI2cMxScrollingVertical(SCROLL_UP, 0, 64, 1, 250);
+                        //vTaskDelay(2);
+                        //ZtScI2cMxDeactivateScroll();
+                        //ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
                 }
                 else {
-                    ZtScI2cMxDeactivateScroll();
+                    //ZtScI2cMxDeactivateScroll();
                     ZtScI2cMxFillArea(0, 8, 0, 128, 0x00);
                 }
             }
         }
-        else {
-//            static uint8_t previousEvent = 0;
-//            
-//            gyro_get_data(&gyroData);
-//            accl_get_data(&acclData);
-//            
-//            if(previousEvent != acclData.event) {
-//                lcdData.operation = LCD_OP_COLLISION;
-//                lcdData.state = acclData.event;
-//                    
-//                xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
-//            }
-//            
-//            previousEvent = acclData.event;
-        }
-        if(startScrSaver == true) {
-            startScrSaver = false;
+        
+        if(lcdStartScrSaver == true) {
+            lcdStartScrSaver = false;
             ZtScI2cMxDisplayArea(0, 8, 0, 128, robot);
 
                 
@@ -491,9 +448,14 @@ void vLcdInterfaceTask(void * pvArg)
 
 static void vLCD_Configuration(void)
 {
+    // LCD initialisation sequence should be the first on I2C line and I2C line 
+    // should be released for some time to prevent demo mode from being started
     ZtScI2cMxReset();
     ZtScI2cMxSetBrightness(0xFF);
     ZtScI2cMxSetVcomH(7);
+    
+    vTaskDelay(5);
+    xSemaphoreGive(xSemaphI2CLcdInitDone);
 }
 
 

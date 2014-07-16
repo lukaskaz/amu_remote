@@ -140,7 +140,7 @@ static void vLighting_Control(const uint8_t state)
 
 void vLighting_RF_Control(const uint8_t type, const uint8_t state)
 {
-    printf("Lighting %d/%d/r/n",type, state);
+    //printf("Lighting %d/%d/r/n", type, state);
     switch(type) {
         case LIGHT_RF_LEFT:
             if(state == LIGHT_RF_ENABLE) {

@@ -20,6 +20,11 @@ typedef struct {
     uint8_t event;
 } AcclData_t;
 
+typedef enum {
+    ACCL_EVENT_NONE = 0,
+    ACCL_EVENT_TAP,
+} AcclEvent_t;
+
 void vOrientation_sensor_configuration(void);
 void gyro_get_data(Vector_t *data);
 void accl_get_data(AcclData_t *data);

@@ -14,7 +14,7 @@
 
 
 typedef enum {
-    LCD_OP_UNDEF = 0,
+    LCD_OP_NONE = 0,
     LCD_OP_DRIVE,
     LCD_OP_LIGHTING,
     LCD_OP_SOUND_SIG,

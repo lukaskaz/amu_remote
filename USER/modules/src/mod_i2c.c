@@ -39,6 +39,8 @@ static void vI2C_stop_transmission(void);
 static uint8_t xI2C_write_byte(uint8_t dat);
 static uint8_t xI2C_read_byte(uint8_t ack);
 
+xSemaphoreHandle xRecMutexI2CSequence = NULL;
+xSemaphoreHandle xSemaphI2CLcdInitDone = NULL;
 
 static void vI2C_ticks_delay(uint32_t i)
 {
@@ -208,6 +210,7 @@ static uint8_t xI2C_read_byte(uint8_t ack)
     return dat;
 }
 
+#include <stdio.h>
 /***********************************************************************
  * Name: xI2C_write_sequence
  * Note: Write data to device
@@ -216,23 +219,28 @@ static uint8_t xI2C_read_byte(uint8_t ack)
 ************************************************************************/
 uint8_t xI2C_write_sequence(uint8_t device, uint8_t *buf, uint8_t cnt)
 {
-    uint8_t i;
+    uint8_t i = 0;
 
-    vI2C_start_transmission();
-    if(xI2C_write_byte((device<<1)&(~0x01)))   //shift device addres left by 1 and clear last bit (write op)
+    if(xSemaphoreTakeRecursive(xRecMutexI2CSequence, portMAX_DELAY) == pdTRUE)
     {
-        vI2C_stop_transmission();
-        return 0;
-    }
-
-    for(i=0; i<cnt; i++)
-    {
-        if(xI2C_write_byte(*buf++))
+        vI2C_start_transmission();
+        if(xI2C_write_byte((device<<1)&(~0x01)) == 0)   //shift device addres left by 1 and clear last bit (write op)
         {
-            break;
+            for(i=0; i<cnt; i++)
+            {
+                if(xI2C_write_byte(*buf++))
+                {
+                    break;
+                }
+            }
         }
+        else {
+            // nack for given device address byte, end i2c communication
+        }
+
+        vI2C_stop_transmission();
+        xSemaphoreGiveRecursive(xRecMutexI2CSequence);
     }
-    vI2C_stop_transmission();
 
     return i;
 }
@@ -246,33 +254,44 @@ uint8_t xI2C_write_sequence(uint8_t device, uint8_t *buf, uint8_t cnt)
 ************************************************************************/
 uint8_t xI2C_read_sequence(uint8_t device, uint8_t *subaddr, uint8_t acnt, uint8_t *buf, uint8_t bcnt)
 {
-    uint8_t i;
-    uint8_t wlen;
-    vI2C_start_transmission();
-    if(xI2C_write_byte((device<<1)&(~0x01)))   //shift device addres left by 1 and clear last bit (write op)
+    uint8_t i = 0;
+    uint8_t wlen = 0;
+    
+    if(xSemaphoreTakeRecursive(xRecMutexI2CSequence, portMAX_DELAY) == pdTRUE)
     {
-        vI2C_stop_transmission();
-        return 0;
-    }
-    for (i=0; i<acnt; i++)
-    {
-        if(xI2C_write_byte(*subaddr++))
+        vI2C_start_transmission();
+        if(xI2C_write_byte((device<<1)&(~0x01)) == 0)   //shift device addres left by 1 and clear last bit (write op)
         {
-            vI2C_stop_transmission();
-            return i;
+            for (i=0; i<acnt; i++)
+            {
+                if(xI2C_write_byte(*subaddr++))
+                {
+                    break;
+                }
+            }
+
+            wlen = i;
+            if(i == acnt) {
+                vI2C_start_transmission();
+                xI2C_write_byte((device<<1)|0x01);   //shift device addres left by 1 and add read bit
+
+                for(i=0; i<bcnt-1; i++)
+                {
+                    *buf++ = xI2C_read_byte(0); // read & send ACK
+                }
+                *buf = xI2C_read_byte(1); // read & send noack
+            }
+            else {
+                // fail to write all given bytes, abort
+            }
         }
-    }
-    wlen = i;
+        else {
+            // nack for given device address byte, end i2c communication
+        }
 
-    vI2C_start_transmission();
-    xI2C_write_byte((device<<1)|0x01);   //shift device addres left by 1 and add read bit
-
-    for(i=0; i<bcnt-1; i++)
-    {
-        *buf++ = xI2C_read_byte(0); // read & send ACK
+        vI2C_stop_transmission();
+        xSemaphoreGiveRecursive(xRecMutexI2CSequence);
     }
-    *buf = xI2C_read_byte(1); // read & send noack
-    vI2C_stop_transmission();
 
     return wlen;
 }

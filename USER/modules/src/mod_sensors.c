@@ -25,15 +25,20 @@
 #include "mod_sensors.h"
 #include "stm32f10x.h"
 #include "stm32f10x_it.h"
+#include "mod_orientation_sensor.h"
+#include "mod_lcd.h"
+#include "mod_sound_signal.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "timers.h"
 
 
 #define ADC1_DR_Address    ((uint32_t)0x4001244C)
 
 void vAnalogSensors_configuration(void);
 void vDistSensors_configuration(void);
+void vVoltageDetector_configuration(void);
 
 
 uint16_t ADC_ConvertedData[8] = {0};
@@ -113,6 +118,12 @@ void trigger_rear_sensor(void)
     sensorInUse = SENSOR_NONE;
 }
 
+bool sensorCollisionDisable = false;
+void vSensorCollisionCallback(xTimerHandle pxTimer)
+{
+    sensorCollisionDisable = true;
+}
+
 /*******************************************************************************
 * Function Name  : vSensorsServiceTask
 * Description    : Sensors service routine
@@ -123,21 +134,73 @@ void trigger_rear_sensor(void)
 *******************************************************************************/
 void vSensorsServiceTask(void * pvArg)
 {
+    xTimerHandle xSensorCollisionTimer;
+    Vector_t gyroData = {0};
+    AcclData_t acclData = {0};
+    lcdControlData_t lcdData = {0};
+    extern volatile uint32_t power_pvd;
+    uint32_t timer = 0;
+
     vAnalogSensors_configuration();
     vDistSensors_configuration();
+    vVoltageDetector_configuration();
+    vOrientation_sensor_configuration();
 
-    
+    xSensorCollisionTimer = xTimerCreate((signed char *)"Sensor collision timer", 2000, pdFALSE, (void *)2, vSensorCollisionCallback);
+
     while(1)
     {
+        gyro_get_data(&gyroData);
+        accl_get_data(&acclData);
+
+        if(acclData.event == ACCL_EVENT_TAP) {
+            lcdData.operation = LCD_OP_COLLISION;
+            lcdData.state = acclData.event;
+
+            xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
+            vSound_Signal_RF_Control(SOUND_RF_PLAIN);
+            xTimerStart(xSensorCollisionTimer, 0);
+        }
+        else if(sensorCollisionDisable) {
+            sensorCollisionDisable = false;
+            lcdData.operation = LCD_OP_COLLISION;
+            lcdData.state = acclData.event;
+            vSound_Signal_RF_Control(SOUND_RF_NONE);
+
+            xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
+        }
+
+        timer++;
+        printf("Nb: %d, power PVD: %d\r\n", timer, power_pvd);
+        //printf("Accl dev: %.2f, %.2f, %.2f, %d, %d, %f, %f\r\n", 
+        //    acclData.vect.x, acclData.vect.y, acclData.vect.z, acclData.event, 
+        //        ADXL_getAxesTapDetection(), ADXL_getTapThreshold(), ADXL_getTapDuration());
+        //printf("Gyro dev: %.2f, %.2f, %.2f\r\n", gyroData.x, gyroData.y, gyroData.z);
         //printf("ADC1: %.2f, %.2f\n\r", get_internal_temp(), get_illumination());
         //printf("Dist: %.2fcm, %.2fcm*/\n\r", distance[0], distance[1]);
-        trigger_front_sensor();
-        trigger_rear_sensor();
+        //trigger_front_sensor();
+        //trigger_rear_sensor();
    
-        vTaskDelay(1000);
+        vTaskDelay(100);
     }
 }
 
+void vVoltageDetector_configuration(void)
+{
+    EXTI_InitTypeDef EXTI_InitStructure;
+    
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR, ENABLE);
+    
+    EXTI_ClearITPendingBit(EXTI_Line16);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line16;
+    EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Falling;
+    EXTI_InitStructure.EXTI_LineCmd = ENABLE;
+    EXTI_Init(&EXTI_InitStructure);
+
+    PWR_PVDLevelConfig(PWR_PVDLevel_2V2);
+    PWR_PVDCmd(ENABLE);
+}
 
 void vAnalogSensors_configuration(void)
 {
