@@ -166,8 +166,8 @@ void vDrive_Control(void *pvArg)
     xQueueDriveControlCmd = xQueueCreate(DRIVE_DATA_QUEUE_SIZE, sizeof(driveControlData_t));
 
     while(1) {
-        // RF packets should be received between 40ms intervals (set 50ms wait for safety)
-        if(xQueueReceive(xQueueDriveControlCmd, &drive, 50U) != pdTRUE)
+        // RF packets should be received between 30ms intervals (set 40ms wait for safety)
+        if(xQueueReceive(xQueueDriveControlCmd, &drive, 40U) != pdTRUE)
         {
             if(drive.operation == DRIVE_OP_STOPPED) {
                 xQueueReceive(xQueueDriveControlCmd, &drive, portMAX_DELAY);

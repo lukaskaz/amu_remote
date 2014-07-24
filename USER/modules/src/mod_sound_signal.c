@@ -43,8 +43,10 @@ void vSound_Configuration(void)
 
     GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_13;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_PP; 
+    GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_Out_OD; 
     GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+    GPIO_SetBits(GPIOC, GPIO_Pin_13);
 }
 
 void vSound_Signal_Console(void)
@@ -87,10 +89,10 @@ void vSound_Signal_RF_Control(const uint8_t status)
 {
     switch(status) {
         case SOUND_RF_NONE:
-            GPIO_ResetBits(GPIOC, GPIO_Pin_13);
+            GPIO_SetBits(GPIOC, GPIO_Pin_13);
             break;
         case SOUND_RF_PLAIN:
-            GPIO_SetBits(GPIOC, GPIO_Pin_13);
+            GPIO_ResetBits(GPIOC, GPIO_Pin_13);
             break;
         default:
             printf("Sound operation not supported!\n\r");

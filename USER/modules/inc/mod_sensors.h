@@ -7,6 +7,8 @@
 #ifndef MOD_SENSORS_H
 #define MOD_SENSORS_H
 
+#include <stdint.h>
+#include "stm32f10x.h"
 
 typedef enum {
     SENSOR_NONE = 0,
@@ -15,7 +17,9 @@ typedef enum {
 } SensorType_t;
 
 
-void vSensorsServiceTask(void * pvArg);
+extern void vSensorsServiceTask(void * pvArg);
+extern void vCheckSupplyVoltage(FlagStatus PVDO);
+extern uint8_t PWR_PVDLevelGet(void);
 
 extern double distance[];
 extern SensorType_t sensorInUse;

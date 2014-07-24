@@ -25,7 +25,7 @@
 #include "stm32f10x.h"
 
 typedef enum {
-    LIGHT_OP_UNDEF = '0',
+    LIGHT_OP_NONE = '0',
     LIGHT_OP_LEFT,
     LIGHT_OP_RIGHT,
     LIGHT_OP_INNER,
@@ -33,7 +33,7 @@ typedef enum {
 } LightOperation_t;
 
 typedef enum {
-    LIGHT_RF_UNDEF = 0,
+    LIGHT_RF_NONE = 0,
     LIGHT_RF_LEFT,
     LIGHT_RF_RIGHT,
     LIGHT_RF_INNER,

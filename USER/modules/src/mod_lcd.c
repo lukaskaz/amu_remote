@@ -21,10 +21,13 @@
 *********************************************************************************************************/
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "mod_lcd.h"
 #include "mod_lcd_consts.h"
 #include "mod_i2c.h"
+#include "mod_sensors.h"
+#include "stm32f10x_it.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -412,12 +415,17 @@ void vLcdInterfaceTask(void * pvArg)
                 }
             }
         }
-        
+        else {
+            char text[20+1] = {0};
+            extern volatile uint32_t power_pvd;
+    
+            snprintf(text, 20, "pvd: %d, %d", PWR_PVDLevelGet(), power_pvd); 
+            ZtScI2cMxDisplay8x16Str(3, 0, text);
+        }
+
         if(lcdStartScrSaver == true) {
             lcdStartScrSaver = false;
             ZtScI2cMxDisplayArea(0, 8, 0, 128, robot);
-
-                
         }
         
 //        ZtScI2cMxDeactivateScroll(ZTSCI2CMX_ADDRESS);
@@ -454,7 +462,7 @@ static void vLCD_Configuration(void)
     ZtScI2cMxSetBrightness(0xFF);
     ZtScI2cMxSetVcomH(7);
     
-    vTaskDelay(5);
+    vTaskDelay(10);
     xSemaphoreGive(xSemaphI2CLcdInitDone);
 }
 

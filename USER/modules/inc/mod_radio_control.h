@@ -11,13 +11,12 @@
 #include "FreeRTOS.h"
 #include "semphr.h"
 
-#define RADIO_FRAME_SIZE              17U
+#define RADIO_FRAME_SIZE              16U
 #define RADIO_PAYLOAD_SIZE            10U
 
 typedef union {
     uint8_t radioRxFrameBuffer[RADIO_FRAME_SIZE];
     struct {
-        uint8_t sourceAddr;
         uint8_t frameType;
         uint8_t senderAddr;
         uint8_t radioFct;

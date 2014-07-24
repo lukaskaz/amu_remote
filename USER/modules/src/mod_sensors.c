@@ -23,7 +23,6 @@
 #include <stdbool.h>
 
 #include "mod_sensors.h"
-#include "stm32f10x.h"
 #include "stm32f10x_it.h"
 #include "mod_orientation_sensor.h"
 #include "mod_lcd.h"
@@ -36,6 +35,17 @@
 
 #define ADC1_DR_Address    ((uint32_t)0x4001244C)
 
+typedef enum {
+    SEN_VOLT_2V2 = 0,
+    SEN_VOLT_2V3,
+    SEN_VOLT_2V4,
+    SEN_VOLT_2V5,
+    SEN_VOLT_2V6,
+    SEN_VOLT_2V7,
+    SEN_VOLT_2V8,
+    SEN_VOLT_2V9
+} sensorVolatage_t;
+
 void vAnalogSensors_configuration(void);
 void vDistSensors_configuration(void);
 void vVoltageDetector_configuration(void);
@@ -44,7 +54,9 @@ void vVoltageDetector_configuration(void);
 uint16_t ADC_ConvertedData[8] = {0};
 double SensorsMeasurements[2] = {0};
 double distance[2]            = {0};
+bool sensorCollisionDisable   = false;
 SensorType_t sensorInUse      = SENSOR_NONE;
+sensorVolatage_t voltageSupplyVal = SEN_VOLT_2V2;
 
 double get_internal_temp(void)
 {
@@ -118,7 +130,78 @@ void trigger_rear_sensor(void)
     sensorInUse = SENSOR_NONE;
 }
 
-bool sensorCollisionDisable = false;
+uint8_t PWR_PVDLevelGet(void) 
+{ 
+    return (uint8_t)((PWR->CR >> 5) & 0x07); 
+}
+
+void vCheckSupplyVoltage(FlagStatus voltageDropping)
+{
+    voltageSupplyVal = (sensorVolatage_t)PWR_PVDLevelGet();
+    if(voltageDropping == SET) {
+        // PVDO is set -> voltage going down
+        switch(voltageSupplyVal) {
+            case SEN_VOLT_2V9:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V8);
+                break;
+            case SEN_VOLT_2V8:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V7);
+                break;
+            case SEN_VOLT_2V7:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V6);
+                break;
+            case SEN_VOLT_2V6:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V5);
+                break;
+            case SEN_VOLT_2V5:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V4);
+                break;
+            case SEN_VOLT_2V4:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V3);
+                break;
+            case SEN_VOLT_2V3:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V2);
+                break;
+            case SEN_VOLT_2V2:
+                break;
+            default: {
+                //case should not occur
+            }
+        }
+    }
+    else {
+        // PVDO is cleared -> voltage is going up
+        switch(voltageSupplyVal) {
+            case SEN_VOLT_2V9:
+                break;
+            case SEN_VOLT_2V8:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V9);
+                break;
+            case SEN_VOLT_2V7:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V8);
+                break;
+            case SEN_VOLT_2V6:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V7);
+                break;
+            case SEN_VOLT_2V5:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V6);
+                break;
+            case SEN_VOLT_2V4:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V5);
+                break;
+            case SEN_VOLT_2V3:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V4);
+                break;
+            case SEN_VOLT_2V2:
+                PWR_PVDLevelConfig(PWR_PVDLevel_2V3);
+                break;
+            default: {
+                //case should not occur
+            }
+        }
+    }
+}
+
 void vSensorCollisionCallback(xTimerHandle pxTimer)
 {
     sensorCollisionDisable = true;
@@ -170,18 +253,21 @@ void vSensorsServiceTask(void * pvArg)
             xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
         }
 
+
         timer++;
-        printf("Nb: %d, power PVD: %d\r\n", timer, power_pvd);
-        //printf("Accl dev: %.2f, %.2f, %.2f, %d, %d, %f, %f\r\n", 
-        //    acclData.vect.x, acclData.vect.y, acclData.vect.z, acclData.event, 
-        //        ADXL_getAxesTapDetection(), ADXL_getTapThreshold(), ADXL_getTapDuration());
+        printf("Voltage: %d,%d,%d,%d\r\n", timer, power_pvd, voltageSupplyVal, PWR_PVDLevelGet());
+        //
+        //printf("Nb: %d, power PVD: %d\r\n", timer, power_pvd);
+        printf("Accl dev: %.2f, %.2f, %.2f, %d, %d, %f, %f\r\n", 
+                acclData.vect.x, acclData.vect.y, acclData.vect.z, acclData.event, 
+              ADXL_getAxesTapDetection(), ADXL_getTapThreshold(), ADXL_getTapDuration());
         //printf("Gyro dev: %.2f, %.2f, %.2f\r\n", gyroData.x, gyroData.y, gyroData.z);
-        //printf("ADC1: %.2f, %.2f\n\r", get_internal_temp(), get_illumination());
-        //printf("Dist: %.2fcm, %.2fcm*/\n\r", distance[0], distance[1]);
-        //trigger_front_sensor();
-        //trigger_rear_sensor();
+        printf("ADC1: %.2f, %.2f\n\r", get_internal_temp(), get_illumination());
+        printf("Dist: %.2fcm, %.2fcm*/\n\r", distance[0], distance[1]);
+        trigger_front_sensor();
+        trigger_rear_sensor();
    
-        vTaskDelay(100);
+        vTaskDelay(1000);
     }
 }
 
@@ -194,11 +280,12 @@ void vVoltageDetector_configuration(void)
     EXTI_ClearITPendingBit(EXTI_Line16);
     EXTI_InitStructure.EXTI_Line = EXTI_Line16;
     EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Falling;
+    //EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
+    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;  // detect voltage droping only
     EXTI_InitStructure.EXTI_LineCmd = ENABLE;
     EXTI_Init(&EXTI_InitStructure);
 
-    PWR_PVDLevelConfig(PWR_PVDLevel_2V2);
+    PWR_PVDLevelConfig(PWR_PVDLevel_2V9);
     PWR_PVDCmd(ENABLE);
 }
 

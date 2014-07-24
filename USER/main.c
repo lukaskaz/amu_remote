@@ -37,22 +37,22 @@
 
 /* Private define ------------------------------------------------------------*/
 #define RADIO_CONTROL_TASK_STACK_SIZE     ( configMINIMAL_STACK_SIZE )
-#define RADIO_CONTROL_TASK_PRIORITY       ( tskIDLE_PRIORITY + 5 )
+#define RADIO_CONTROL_TASK_PRIORITY       ( tskIDLE_PRIORITY + 4 )
 
 #define DRIVE_CONTROL_TASK_STACK_SIZE     ( configMINIMAL_STACK_SIZE )
-#define DRIVE_CONTROL_TASK_PRIORITY       ( tskIDLE_PRIORITY + 4 )
+#define DRIVE_CONTROL_TASK_PRIORITY       ( tskIDLE_PRIORITY + 3 )
 
 #define LED_SIGNALING_TASK_STACK_SIZE     ( configMINIMAL_STACK_SIZE )
-#define LED_SIGNALING_TASK_PRIORITY       ( tskIDLE_PRIORITY + 2 )
+#define LED_SIGNALING_TASK_PRIORITY       ( tskIDLE_PRIORITY + 1 )
 
 #define CONSOLE_INTERFACE_TASK_STACK_SIZE ( configMINIMAL_STACK_SIZE )
-#define CONSOLE_INTERFACE_TASK_PRIORITY   ( tskIDLE_PRIORITY + 2 )
+#define CONSOLE_INTERFACE_TASK_PRIORITY   ( tskIDLE_PRIORITY + 1 )
 
 #define SENSORS_SERVICE_TASK_STACK_SIZE   ( configMINIMAL_STACK_SIZE )
-#define SENSORS_SERVICE_TASK_PRIORITY     ( tskIDLE_PRIORITY + 3 )
+#define SENSORS_SERVICE_TASK_PRIORITY     ( tskIDLE_PRIORITY + 2 )
 
 #define LCD_INTERFACE_TASK_STACK_SIZE     ( configMINIMAL_STACK_SIZE )
-#define LCD_INTERFACE_TASK_PRIORITY       ( tskIDLE_PRIORITY + 3 )
+#define LCD_INTERFACE_TASK_PRIORITY       ( tskIDLE_PRIORITY + 2 )
 
 
 /* Private function prototypes -----------------------------------------------*/
@@ -175,18 +175,18 @@ static void vNVIC_configuration(void)
 {
     NVIC_InitTypeDef NVIC_InitStructure;
 
-    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_3);
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
 
-    //interruption for USB
-    NVIC_InitStructure.NVIC_IRQChannel                   = USB_LP_CAN1_RX0_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+    // interruption for radio RF usart
+    NVIC_InitStructure.NVIC_IRQChannel                   = USART1_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 11;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
-    
-    // interruption for radio RF usart
-    NVIC_InitStructure.NVIC_IRQChannel                   = USART1_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+
+    //interruption for USB
+    NVIC_InitStructure.NVIC_IRQChannel                   = USB_LP_CAN1_RX0_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 12;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
@@ -194,22 +194,22 @@ static void vNVIC_configuration(void)
     // interruption for distance sensor time measurements
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_3);
     NVIC_InitStructure.NVIC_IRQChannel                   = TIM4_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 2;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 13;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
     
     // interruption for ADC external trigger
     NVIC_InitStructure.NVIC_IRQChannel                   = TIM1_CC_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 14;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
     // interruption for power supply voltage detector
     NVIC_InitStructure.NVIC_IRQChannel                   = PVD_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 1;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 15;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 }

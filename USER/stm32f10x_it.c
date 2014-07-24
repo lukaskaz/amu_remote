@@ -29,6 +29,9 @@
 #include "mod_sensors.h"
 
 /* Private define ------------------------------------------------------------*/
+#define RADIO_UART_MASTER_ADDRESS       (0x100|0x05)
+#define RADIO_UART_SLAVE_ADDRESS        (0x100|0x0A)
+
 /* Private typedef -----------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
@@ -146,8 +149,11 @@ void DebugMon_Handler(void)
 *******************************************************************************/
 void USB_LP_CAN1_RX0_IRQHandler(void)
 {
-    xSemaphoreGiveFromISR(xSemaphLedSignal, NULL);
+    portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
+
     USB_Istr();
+    xSemaphoreGiveFromISR(xSemaphLedSignal, &xHigherPriorityTaskWoken);
+    portEND_SWITCHING_ISR(xHigherPriorityTaskWoken);
 }
 
 /*******************************************************************************
@@ -157,6 +163,7 @@ void USB_LP_CAN1_RX0_IRQHandler(void)
 * Output         : None
 * Return         : None
 *******************************************************************************/
+#include <stdio.h>
 void USART1_IRQHandler(void)
 {
     static uint8_t frameCellPos = 0;
@@ -167,13 +174,26 @@ void USART1_IRQHandler(void)
     }
 
     if(USART_GetFlagStatus(USART1, USART_FLAG_RXNE) == SET) {
+        uint16_t data = USART_ReceiveData(USART1);
         USART_ClearFlag(USART1, USART_FLAG_RXNE);
-        radioData.radioRxFrameBuffer[frameCellPos] = USART_ReceiveData(USART1);
-        frameCellPos++;
-
-        if(frameCellPos == RADIO_FRAME_SIZE) {
+        
+        if(data == RADIO_UART_MASTER_ADDRESS) {
+            // ignore the first received byte (uart target address)
+            // and reset frame byte position
             frameCellPos = 0;
-            xSemaphoreGiveFromISR(xSemaphRadioPacketReady, NULL);
+        }
+        else {
+            radioData.radioRxFrameBuffer[frameCellPos] = (uint8_t)data;
+            frameCellPos++;
+
+            printf("%d/%d ", frameCellPos, data);
+            if(frameCellPos == RADIO_FRAME_SIZE) {
+                portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
+                
+                printf("\r\n");
+                xSemaphoreGiveFromISR(xSemaphRadioPacketReady, &xHigherPriorityTaskWoken);
+                portEND_SWITCHING_ISR(xHigherPriorityTaskWoken);
+            }
         }
     }
 
@@ -254,8 +274,12 @@ void PVD_IRQHandler(void)
 {
     if(EXTI_GetITStatus(EXTI_Line16) == SET)
     {
+        uint8_t PVDO_state = 0;
         EXTI_ClearITPendingBit(EXTI_Line16);
+
         power_pvd++;
+        PVDO_state = PWR_GetFlagStatus(PWR_FLAG_PVDO);
+        vCheckSupplyVoltage(PVDO_state);
     }
 }
 /*******************************************************************************

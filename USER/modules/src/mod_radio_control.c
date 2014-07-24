@@ -99,11 +99,11 @@ void vRadio_Control(void *pvArg)
 
     vRadio_Configuration();
 
-    xRadioRefreshTimer = xTimerCreate((signed char *)"Radio refresh timer", 50, pdFALSE, (void *)3, vRadioRefreshCallback);
+    xRadioRefreshTimer = xTimerCreate((signed char *)"Radio refresh timer", 40, pdFALSE, (void *)3, vRadioRefreshCallback);
     while(1) {
         lcdControlData_t lcdData = {0};
     
-        if(xSemaphoreTake(xSemaphRadioPacketReady, 10/portTICK_RATE_MS) == pdTRUE) {
+        if(xSemaphoreTake(xSemaphRadioPacketReady, 10) == pdTRUE) {
             xTimerStart(xRadioRefreshTimer, 0);
 
             if(radioData.operations.payload.function == RADIO_OP_DRIVE) {
@@ -121,8 +121,8 @@ void vRadio_Control(void *pvArg)
                 vLighting_RF_Control(radioData.operations.payload.lightingData.lightingType, radioData.operations.payload.lightingData.lightingState);
             }
             else if(radioData.operations.payload.function == RADIO_OP_SOUND_SIG) {
-                // new packet should be received within 40ms (set 10ms more for safety)
-                // trigger timer to disable sound signal when 50ms time is depleted and on signal is not sustained
+                // new packet should be received within 30ms (set 10ms more for safety)
+                // trigger timer to disable sound signal when 40ms time is depleted and on signal is not sustained
                 if(lastOperation != RADIO_OP_SOUND_SIG) {
                     vSound_Signal_RF_Control(radioData.operations.payload.soundSignalData.soundSignalStatus);
                     lcdData.operation = LCD_OP_SOUND_SIG;
