@@ -27,6 +27,7 @@
 #include "mod_orientation_sensor.h"
 #include "mod_lcd.h"
 #include "mod_sound_signal.h"
+#include "mod_lighting.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -34,6 +35,12 @@
 
 
 #define ADC1_DR_Address    ((uint32_t)0x4001244C)
+
+#define ILLUM_NONE_TRIG     70.0f
+#define ILLUM_MIN_TRIG      50.0f
+#define ILLUM_MID_TRIG      30.0f
+#define ILLUM_MAX_TRIG      10.0f
+
 
 typedef enum {
     SEN_VOLT_2V2 = 0,
@@ -46,19 +53,61 @@ typedef enum {
     SEN_VOLT_2V9
 } sensorVolatage_t;
 
-void vAnalogSensors_configuration(void);
-void vDistSensors_configuration(void);
-void vVoltageDetector_configuration(void);
-
+static void vAnalogSensors_configuration(void);
+static void vDistSensors_configuration(void);
+static void vVoltageDetector_configuration(void);
+static double get_internal_temp(void);
+static double get_illumination(void);
+static uint8_t PWR_PVDLevelGet(void);
+static void adjust_auto_lighting(void);
 
 uint16_t ADC_ConvertedData[8] = {0};
 double SensorsMeasurements[2] = {0};
 double distance[2]            = {0};
 bool sensorCollisionDisable   = false;
 SensorType_t sensorInUse      = SENSOR_NONE;
-sensorVolatage_t voltageSupplyVal = SEN_VOLT_2V2;
 
-double get_internal_temp(void)
+
+static void adjust_auto_lighting(void)
+{
+    if(isLightingAutoModeEnabled() == true) {
+        double illumination = get_illumination();
+
+        if(illumination > ILLUM_NONE_TRIG) {
+            vLighting_Auto_Control(LIGHT_AUTO_NONE);
+        }
+        else if(illumination > ILLUM_MIN_TRIG) {
+            vLighting_Auto_Control(LIGHT_AUTO_MIN);
+        }
+        else if(illumination > ILLUM_MID_TRIG) {
+            vLighting_Auto_Control(LIGHT_AUTO_MEDIUM);
+        }
+        else {
+            vLighting_Auto_Control(LIGHT_AUTO_MAX);
+        }
+    }
+}
+
+sensorBattery_t get_battery_status(void)
+{
+    sensorBattery_t fresult = SEN_BAT_LOW;
+    sensorVolatage_t supplyVoltage = (sensorVolatage_t)PWR_PVDLevelGet();
+    
+    if(supplyVoltage < SEN_VOLT_2V7) {
+        fresult = SEN_BAT_LOW;
+    }
+    else if(supplyVoltage < SEN_VOLT_2V9) {
+        fresult = SEN_BAT_HALF;
+    }
+    else {
+        // battery >= 2,9V
+        fresult = SEN_BAT_FULL;
+    }
+    
+    return fresult;
+}
+
+static double get_internal_temp(void)
 {
     uint8_t i = 0;
     uint16_t adcAvgVal = 0;
@@ -75,7 +124,7 @@ double get_internal_temp(void)
     return tempVal;
 }
 
-double get_illumination(void)
+static double get_illumination(void)
 {
     uint8_t i = 0;
     uint16_t adcAvgVal = 0;
@@ -130,17 +179,17 @@ void trigger_rear_sensor(void)
     sensorInUse = SENSOR_NONE;
 }
 
-uint8_t PWR_PVDLevelGet(void) 
+static uint8_t PWR_PVDLevelGet(void) 
 { 
     return (uint8_t)((PWR->CR >> 5) & 0x07); 
 }
 
 void vCheckSupplyVoltage(FlagStatus voltageDropping)
 {
-    voltageSupplyVal = (sensorVolatage_t)PWR_PVDLevelGet();
+    sensorVolatage_t supplyVoltage = (sensorVolatage_t)PWR_PVDLevelGet();
     if(voltageDropping == SET) {
         // PVDO is set -> voltage going down
-        switch(voltageSupplyVal) {
+        switch(supplyVoltage) {
             case SEN_VOLT_2V9:
                 PWR_PVDLevelConfig(PWR_PVDLevel_2V8);
                 break;
@@ -171,7 +220,7 @@ void vCheckSupplyVoltage(FlagStatus voltageDropping)
     }
     else {
         // PVDO is cleared -> voltage is going up
-        switch(voltageSupplyVal) {
+        switch(supplyVoltage) {
             case SEN_VOLT_2V9:
                 break;
             case SEN_VOLT_2V8:
@@ -221,8 +270,6 @@ void vSensorsServiceTask(void * pvArg)
     Vector_t gyroData = {0};
     AcclData_t acclData = {0};
     lcdControlData_t lcdData = {0};
-    extern volatile uint32_t power_pvd;
-    uint32_t timer = 0;
 
     vAnalogSensors_configuration();
     vDistSensors_configuration();
@@ -230,7 +277,6 @@ void vSensorsServiceTask(void * pvArg)
     vOrientation_sensor_configuration();
 
     xSensorCollisionTimer = xTimerCreate((signed char *)"Sensor collision timer", 2000, pdFALSE, (void *)2, vSensorCollisionCallback);
-
     while(1)
     {
         gyro_get_data(&gyroData);
@@ -246,28 +292,24 @@ void vSensorsServiceTask(void * pvArg)
         }
         else if(sensorCollisionDisable) {
             sensorCollisionDisable = false;
-            lcdData.operation = LCD_OP_COLLISION;
-            lcdData.state = acclData.event;
             vSound_Signal_RF_Control(SOUND_RF_NONE);
-
-            xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
         }
 
 
-        timer++;
-        printf("Voltage: %d,%d,%d,%d\r\n", timer, power_pvd, voltageSupplyVal, PWR_PVDLevelGet());
+        //printf("Voltage: %d,%d,%d\r\n", timer, power_pvd, PWR_PVDLevelGet());
         //
         //printf("Nb: %d, power PVD: %d\r\n", timer, power_pvd);
-        printf("Accl dev: %.2f, %.2f, %.2f, %d, %d, %f, %f\r\n", 
-                acclData.vect.x, acclData.vect.y, acclData.vect.z, acclData.event, 
-              ADXL_getAxesTapDetection(), ADXL_getTapThreshold(), ADXL_getTapDuration());
+        //printf("Accl dev: %.2f, %.2f, %.2f, %d, %d, %f, %f\r\n", 
+        //        acclData.vect.x, acclData.vect.y, acclData.vect.z, acclData.event, 
+        //      ADXL_getAxesTapDetection(), ADXL_getTapThreshold(), ADXL_getTapDuration());
         //printf("Gyro dev: %.2f, %.2f, %.2f\r\n", gyroData.x, gyroData.y, gyroData.z);
-        printf("ADC1: %.2f, %.2f\n\r", get_internal_temp(), get_illumination());
-        printf("Dist: %.2fcm, %.2fcm*/\n\r", distance[0], distance[1]);
+        //printf("ADC1: %.2f, %.2f\n\r", get_internal_temp(), get_illumination());
+        //printf("Dist: %.2fcm, %.2fcm*/\n\r", distance[0], distance[1]);
+        adjust_auto_lighting();
         trigger_front_sensor();
         trigger_rear_sensor();
    
-        vTaskDelay(1000);
+        vTaskDelay(10);
     }
 }
 

@@ -16,10 +16,16 @@ typedef enum {
     SENSOR_REAR,
 } SensorType_t;
 
+typedef enum {
+    SEN_BAT_LOW = 0,
+    SEN_BAT_HALF,
+    SEN_BAT_FULL
+} sensorBattery_t;
+
 
 extern void vSensorsServiceTask(void * pvArg);
 extern void vCheckSupplyVoltage(FlagStatus PVDO);
-extern uint8_t PWR_PVDLevelGet(void);
+extern sensorBattery_t get_battery_status(void);
 
 extern double distance[];
 extern SensorType_t sensorInUse;

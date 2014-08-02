@@ -8,9 +8,20 @@
 #define MOD_LIGHTING_H
 
 #include "stm32f10x.h"
+#include <stdbool.h>
 
-extern void vLighting_Configuration(void);
+
+typedef enum {
+    LIGHT_AUTO_NONE = 0,
+    LIGHT_AUTO_MIN,
+    LIGHT_AUTO_MEDIUM,
+    LIGHT_AUTO_MAX
+} LightAutoOperation_t;
+
+extern bool isLightingAutoModeEnabled(void);
+extern void vLighting_configuration(void);
 extern void vLighting_Console(void);
 extern void vLighting_RF_Control(const uint8_t type, const uint8_t state);
+extern void vLighting_Auto_Control(const LightAutoOperation_t type);
 
 #endif

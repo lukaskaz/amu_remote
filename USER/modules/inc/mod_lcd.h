@@ -27,6 +27,16 @@ typedef enum {
 } LcdSoundState_t;
 
 typedef enum {
+    LCD_LIGHT_MANUAL = 0,
+    LCD_LIGHT_AUTO,
+} LcdLightState_t;
+
+typedef enum {
+    LCD_MV_STOPPED = 0,
+    LCD_MV_IN_MOTION,
+} LcdMovementState_t;
+
+typedef enum {
     LCD_COLLIS_OFF = 0,
     LCD_COLLIS_ON,
 } LcdCollision_t;

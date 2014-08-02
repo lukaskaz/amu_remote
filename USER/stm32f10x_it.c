@@ -37,7 +37,6 @@
 /* Private variables ---------------------------------------------------------*/
 volatile bool uart_data_sent     = false;
 volatile bool distMeasReady      = false;
-volatile uint32_t power_pvd = 0;
 /* Private function prototypes -----------------------------------------------*/
 /* Private functions ---------------------------------------------------------*/
 
@@ -176,7 +175,8 @@ void USART1_IRQHandler(void)
     if(USART_GetFlagStatus(USART1, USART_FLAG_RXNE) == SET) {
         uint16_t data = USART_ReceiveData(USART1);
         USART_ClearFlag(USART1, USART_FLAG_RXNE);
-        
+
+        printf("%d/%d ", frameCellPos, data);
         if(data == RADIO_UART_MASTER_ADDRESS) {
             // ignore the first received byte (uart target address)
             // and reset frame byte position
@@ -186,7 +186,6 @@ void USART1_IRQHandler(void)
             radioData.radioRxFrameBuffer[frameCellPos] = (uint8_t)data;
             frameCellPos++;
 
-            printf("%d/%d ", frameCellPos, data);
             if(frameCellPos == RADIO_FRAME_SIZE) {
                 portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
                 
@@ -274,10 +273,9 @@ void PVD_IRQHandler(void)
 {
     if(EXTI_GetITStatus(EXTI_Line16) == SET)
     {
-        uint8_t PVDO_state = 0;
+        FlagStatus PVDO_state = RESET;
         EXTI_ClearITPendingBit(EXTI_Line16);
 
-        power_pvd++;
         PVDO_state = PWR_GetFlagStatus(PWR_FLAG_PVDO);
         vCheckSupplyVoltage(PVDO_state);
     }

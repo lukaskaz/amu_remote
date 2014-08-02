@@ -34,6 +34,8 @@
 #include "mod_sensors.h"
 #include "mod_lcd.h"
 #include "mod_i2c.h"
+#include "mod_sound_signal.h"
+#include "mod_lighting.h"
 
 /* Private define ------------------------------------------------------------*/
 #define RADIO_CONTROL_TASK_STACK_SIZE     ( configMINIMAL_STACK_SIZE )
@@ -122,6 +124,8 @@ static void prvSetupHardware(void)
     vNVIC_configuration();
     vUSB_configuration();
     vI2C_configuration();
+    vSound_configuration();
+    vLighting_configuration();
 }
 
 static void vRCC_configuration(void) 

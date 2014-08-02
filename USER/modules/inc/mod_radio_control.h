@@ -24,35 +24,50 @@ typedef union {
         uint8_t payloadBytesNb;
         
         union {
-            uint8_t function;
+            uint8_t operation;
             struct {
                 uint8_t data[RADIO_PAYLOAD_SIZE];
             } plainData;
             struct {
-                uint8_t function;
                 uint8_t operation;
+                uint8_t controller;
+            } common;
+            struct {
+                uint8_t operation;
+                uint8_t controller;
+                uint8_t direction;
                 uint8_t speed_0;
                 uint8_t speed_1;
             } driveData;
             struct {
-                uint8_t function;
+                uint8_t operation;
+                uint8_t controller;
                 uint8_t lightingType;
                 uint8_t lightingState;
             } lightingData;
             struct {
-                uint8_t function;
+                uint8_t operation;
+                uint8_t controller;
                 uint8_t soundSignalStatus;
             } soundSignalData;
         } payload;
         
-        uint8_t chaecksum;
+        uint8_t checksum;
     } operations;
 } radioData_t;
 
+typedef enum {
+    RADIO_CTRL_NONE = 0,
+    RADIO_CTRL_CONSOLE,
+    RADIO_CTRL_JOYSTICK,
+    RADIO_CTRL_BLUETOOTH,
+} radioController_t;
 
-void vRadio_Control(void *pvArg);
+
+extern void vRadio_Control(void *pvArg);
 
 extern radioData_t radioData;
 extern xSemaphoreHandle xSemaphRadioPacketReady;
+extern const uint16_t radioIntervalDelay[];
 
 #endif

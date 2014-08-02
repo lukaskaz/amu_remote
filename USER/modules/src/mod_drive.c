@@ -25,26 +25,14 @@
 #include "mod_drive.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "mod_radio_control.h"
 
 
 #define DRIVE_DATA_QUEUE_SIZE    4U
 #define MAX_VELOCITY_VALUE       100U
 
-typedef enum {
-    DRIVE_OP_STOPPED = 0,
-    DRIVE_OP_FORWARD,
-    DRIVE_OP_BACKWARD,
-    DRIVE_OP_LEFT,
-    DRIVE_OP_RIGHT,
-    DRIVE_OP_JOY_STOPPED,
-    DRIVE_OP_JOY_FORWARD,
-    DRIVE_OP_JOY_BACKWARD,
-    DRIVE_OP_JOY_LEFT,
-    DRIVE_OP_JOY_RIGHT,
-} driveOperations_t;
-
-
 xQueueHandle xQueueDriveControlCmd = NULL;
+
 
 void vDrive_Configuration(void);
 
@@ -102,7 +90,6 @@ void vDrive_Configuration(void)
 
 void vDrive_Console(void)
 {
-    FILE * pFile;
     char selection = 0;
     static uint32_t velocity = 0;
     driveControlData_t driveControlData = {0};
@@ -122,29 +109,29 @@ void vDrive_Console(void)
            " Selection/> ");
 
     do {
-        selection = getc(pFile);
+        selection = getchar();
         printf("Selected %c!\n\r", selection);
 
         switch(selection) {
             case '1':
-                driveControlData.operation = DRIVE_OP_FORWARD;
+                driveControlData.direction = DRIVE_OP_FORWARD;
                 driveControlData.speed_0 = velocity;
                 driveControlData.speed_1 = velocity;
                 xQueueSend(xQueueDriveControlCmd, (void *)&driveControlData, 0);
                 break;
             case '2':
-                driveControlData.operation = DRIVE_OP_BACKWARD;
+                driveControlData.direction = DRIVE_OP_BACKWARD;
                 driveControlData.speed_0 = velocity;
                 driveControlData.speed_1 = velocity;
                 xQueueSend(xQueueDriveControlCmd, (void *)&driveControlData, 0);
                 break;
             case '7':
-                driveControlData.operation = DRIVE_OP_LEFT;
+                driveControlData.direction = DRIVE_OP_LEFT;
                 driveControlData.speed_0 = velocity;
                 xQueueSend(xQueueDriveControlCmd, (void *)&driveControlData, 0);
                 break;
             case '8':
-                driveControlData.operation = DRIVE_OP_RIGHT;
+                driveControlData.direction = DRIVE_OP_RIGHT;
                 driveControlData.speed_1 = velocity;
                 xQueueSend(xQueueDriveControlCmd, (void *)&driveControlData, 0);
                 break;
@@ -166,16 +153,7 @@ void vDrive_Control(void *pvArg)
     xQueueDriveControlCmd = xQueueCreate(DRIVE_DATA_QUEUE_SIZE, sizeof(driveControlData_t));
 
     while(1) {
-        // RF packets should be received between 30ms intervals (set 40ms wait for safety)
-        if(xQueueReceive(xQueueDriveControlCmd, &drive, 40U) != pdTRUE)
-        {
-            if(drive.operation == DRIVE_OP_STOPPED) {
-                xQueueReceive(xQueueDriveControlCmd, &drive, portMAX_DELAY);
-            }
-            else {
-                drive.operation = DRIVE_OP_STOPPED;
-            }
-        }
+        xQueueReceive(xQueueDriveControlCmd, &drive, portMAX_DELAY);
 
         if(drive.speed_0 > MAX_VELOCITY_VALUE) {
             drive.speed_0 = MAX_VELOCITY_VALUE;
@@ -184,7 +162,7 @@ void vDrive_Control(void *pvArg)
             drive.speed_1 = MAX_VELOCITY_VALUE;
         }
                 
-        switch(drive.operation) {
+        switch(drive.direction) {
             case DRIVE_OP_STOPPED:
             case DRIVE_OP_JOY_STOPPED:
                 //printf("Motors stopped!\n\r");

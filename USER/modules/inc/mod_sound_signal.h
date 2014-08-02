@@ -14,7 +14,7 @@ typedef enum {
     SOUND_RF_PLAIN,
 } SoundRFOperation_t;
 
-void vSound_Configuration(void);
+void vSound_configuration(void);
 void vSound_Signal_Console(void);
 void vSound_Signal_RF_Control(const uint8_t status);
 

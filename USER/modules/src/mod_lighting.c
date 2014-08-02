@@ -23,6 +23,12 @@
 
 #include "mod_lighting.h"
 #include "stm32f10x.h"
+#include "mod_lcd.h"
+
+typedef enum {
+    LIGHT_MODE_MANUAL = 0,
+    LIGHT_MODE_AUTO,
+} lightMode_t;
 
 typedef enum {
     LIGHT_OP_NONE = '0',
@@ -45,10 +51,58 @@ typedef enum {
     LIGHT_RF_ENABLE,
 } LightState_t;
 
+static lightMode_t currentLightMode = LIGHT_MODE_MANUAL;
 
+static void resetLightingToDefaults(void);
+static void adjustLightingMode(void);
 static void vLighting_Control(const uint8_t state);
 
-void vLighting_Configuration(void)
+static void resetLightingToDefaults(void)
+{
+    GPIO_SetBits(GPIOB, GPIO_Pin_4);
+    GPIO_SetBits(GPIOB, GPIO_Pin_5);
+    GPIO_SetBits(GPIOB, GPIO_Pin_3);
+    GPIO_SetBits(GPIOA, GPIO_Pin_15);
+}
+
+bool isLightingAutoModeEnabled(void)
+{
+    bool fresult = false;
+
+    if(currentLightMode == LIGHT_MODE_AUTO) {
+        fresult = true;
+    }
+    
+    return fresult;
+}
+
+static void adjustLightingMode(void)
+{
+    lcdControlData_t lcdData = {0};
+
+    if(currentLightMode == LIGHT_MODE_MANUAL) {
+        if(GPIO_ReadOutputDataBit(GPIOB, GPIO_Pin_4) == Bit_SET &&
+           GPIO_ReadOutputDataBit(GPIOB, GPIO_Pin_5) == Bit_SET &&
+           GPIO_ReadOutputDataBit(GPIOB, GPIO_Pin_3) == Bit_SET &&
+           GPIO_ReadOutputDataBit(GPIOA, GPIO_Pin_15) == Bit_SET ) {
+            currentLightMode = LIGHT_MODE_AUTO;
+            lcdData.operation = LCD_OP_LIGHTING;
+            lcdData.state = LCD_LIGHT_AUTO;
+        }
+    }
+    else {
+        currentLightMode = LIGHT_MODE_MANUAL;
+        lcdData.operation = LCD_OP_LIGHTING;
+        lcdData.state = LCD_LIGHT_MANUAL;
+
+    }
+    
+    if(lcdData.operation != LCD_OP_NONE) {
+        xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
+    }
+}
+
+void vLighting_configuration(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure;
 
@@ -73,7 +127,6 @@ void vLighting_Configuration(void)
 
 void vLighting_Console(void)
 {
-    FILE * pFile;
     char selection = 0;
 
     printf("\n\r"
@@ -91,7 +144,7 @@ void vLighting_Console(void)
 
     do {
         GPIO_ResetBits(GPIOC, GPIO_Pin_13);
-        selection = getc(pFile);
+        selection = getchar();
 
         vLighting_Control(selection);
 
@@ -141,6 +194,10 @@ static void vLighting_Control(const uint8_t state)
 void vLighting_RF_Control(const uint8_t type, const uint8_t state)
 {
     //printf("Lighting %d/%d/r/n", type, state);
+    if(isLightingAutoModeEnabled() == true) {
+        resetLightingToDefaults();
+    }
+
     switch(type) {
         case LIGHT_RF_LEFT:
             if(state == LIGHT_RF_ENABLE) {
@@ -176,6 +233,39 @@ void vLighting_RF_Control(const uint8_t type, const uint8_t state)
             break;
         default:
             printf("Lighting operation not supported!\n\r");
+    }
+
+    adjustLightingMode();
+}
+
+void vLighting_Auto_Control(const LightAutoOperation_t type)
+{
+    switch(type) {
+        case LIGHT_AUTO_NONE:
+            GPIO_SetBits(GPIOB, GPIO_Pin_4);
+            GPIO_SetBits(GPIOB, GPIO_Pin_5);
+            GPIO_SetBits(GPIOB, GPIO_Pin_3);
+            GPIO_SetBits(GPIOA, GPIO_Pin_15);
+            break;
+        case LIGHT_AUTO_MIN:
+            GPIO_ResetBits(GPIOB, GPIO_Pin_4);
+            GPIO_ResetBits(GPIOB, GPIO_Pin_5);
+            GPIO_SetBits(GPIOB, GPIO_Pin_3);
+            GPIO_SetBits(GPIOA, GPIO_Pin_15);
+            break;
+        case LIGHT_AUTO_MEDIUM:
+            GPIO_ResetBits(GPIOB, GPIO_Pin_4);
+            GPIO_ResetBits(GPIOB, GPIO_Pin_5);
+            GPIO_ResetBits(GPIOB, GPIO_Pin_3);
+            GPIO_SetBits(GPIOA, GPIO_Pin_15);
+            break;
+        case LIGHT_AUTO_MAX:
+            GPIO_ResetBits(GPIOB, GPIO_Pin_4);
+            GPIO_ResetBits(GPIOB, GPIO_Pin_5);
+            GPIO_ResetBits(GPIOB, GPIO_Pin_3);
+            GPIO_ResetBits(GPIOA, GPIO_Pin_15);
+            break;
+        default: {}
     }
 }
 

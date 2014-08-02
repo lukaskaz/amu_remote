@@ -35,7 +35,7 @@ typedef enum {
 static void vSound_Signal_Control(const uint8_t status);
 
 
-void vSound_Configuration(void)
+void vSound_configuration(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure;
 
@@ -51,7 +51,6 @@ void vSound_Configuration(void)
 
 void vSound_Signal_Console(void)
 {
-    FILE * pFile;
     char selection = 0;
 
     printf("\n\r"
@@ -65,7 +64,7 @@ void vSound_Signal_Console(void)
            " Selection/> ");
 
     do {
-        selection = getc(pFile);
+        selection = getchar();
         vSound_Signal_Control(selection);
 
     } while(selection != '0');
@@ -75,14 +74,14 @@ static void vSound_Signal_Control(const uint8_t status)
 {
     switch(status) {
         case SOUND_OP_PLAIN:
-            GPIO_SetBits(GPIOC, GPIO_Pin_13);
+            GPIO_ResetBits(GPIOC, GPIO_Pin_13);
             break;
         default:
             printf("Sound operation not supported!\n\r");
     }
 
     vTaskDelay(100);
-    GPIO_ResetBits(GPIOC, GPIO_Pin_13);
+    GPIO_SetBits(GPIOC, GPIO_Pin_13);
 }
 
 void vSound_Signal_RF_Control(const uint8_t status)

@@ -35,6 +35,12 @@
 #include "queue.h"
 #include "timers.h"
 
+#define RADIO_CTRL_MS_INTERVAL_NONE       0
+#define RADIO_CTRL_MS_INTERVAL_CONSOLE    100U
+#define RADIO_CTRL_MS_INTERVAL_JOYSTICK   50U
+#define RADIO_CTRL_MS_INTERVAL_BLUETOOTH  120U
+#define RADIO_OP_QUEUE_SIZE               4U
+
 typedef enum {
     RADIO_OP_NONE = 0,
     RADIO_OP_DRIVE,
@@ -43,14 +49,69 @@ typedef enum {
     RADIO_OP_HEARTBEAT,
 } RadioOperation_t;
 
-void vRadio_Configuration(void);
+typedef struct {
+    RadioOperation_t operation[RADIO_OP_QUEUE_SIZE];
+    uint8_t operationPos;
+} radioOperationQueue_t;
+
+void vRadio_configuration(void);
+static bool isOperationWaiting(const radioOperationQueue_t *queue, const RadioOperation_t op);
+static void addOperation(radioOperationQueue_t *queue, const RadioOperation_t op);
+static RadioOperation_t getOperation(radioOperationQueue_t *queue);
 
 xSemaphoreHandle xSemaphRadioPacketReady = NULL;
 bool startRadioRefresh = false;
 radioData_t radioData = {0};
+const uint16_t radioIntervalDelay[4] = { RADIO_CTRL_MS_INTERVAL_NONE, RADIO_CTRL_MS_INTERVAL_CONSOLE,
+                                         RADIO_CTRL_MS_INTERVAL_JOYSTICK, RADIO_CTRL_MS_INTERVAL_BLUETOOTH };
 
+static bool isOperationWaiting(const radioOperationQueue_t *queue, const RadioOperation_t op)
+{
+    bool fresult = false;
+    uint8_t i = 0;
+    
+    for(i=0; i<queue->operationPos; i++) {
+        if(queue->operation[i] == op) {
+            fresult = true;
+            break;
+        }
+    }
 
-void vRadio_Configuration(void)
+    return fresult;
+}
+
+static void addOperation(radioOperationQueue_t *queue, const RadioOperation_t op)
+{
+    if(op != RADIO_OP_NONE && isOperationWaiting(queue, op) != true) {
+        queue->operation[queue->operationPos] = op;
+        queue->operationPos++;
+        if(queue->operationPos == RADIO_OP_QUEUE_SIZE) {
+            // when buffer overflows only the last cell can be updated
+            // other cells are being kept until removed intentionally by software
+            queue->operationPos--;
+        }
+    }
+}
+
+static RadioOperation_t getOperation(radioOperationQueue_t *queue)
+{
+    RadioOperation_t fresult = RADIO_OP_NONE;
+    uint8_t i = 0;
+    
+    if(queue->operationPos != 0) {
+        fresult = queue->operation[0];
+        queue->operationPos--;
+        
+        for(i=0; i<queue->operationPos; i++) {
+            queue->operation[i] = queue->operation[i+1];
+        }
+        queue->operation[i] = RADIO_OP_NONE;
+    }
+
+    return fresult;
+}
+
+void vRadio_configuration(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure;
     USART_InitTypeDef USART_InitStructure;
@@ -95,65 +156,94 @@ void vRadioRefreshCallback(xTimerHandle pxTimer)
 void vRadio_Control(void *pvArg)
 {
     xTimerHandle xRadioRefreshTimer;
-    uint8_t lastOperation = RADIO_OP_NONE;
+    radioOperationQueue_t radioOperationQueue = {RADIO_OP_NONE};
+    radioController_t controller = RADIO_CTRL_CONSOLE;
 
-    vRadio_Configuration();
+    vRadio_configuration();
 
-    xRadioRefreshTimer = xTimerCreate((signed char *)"Radio refresh timer", 40, pdFALSE, (void *)3, vRadioRefreshCallback);
+    xRadioRefreshTimer = xTimerCreate((signed char *)"Radio refresh timer", radioIntervalDelay[controller], pdFALSE, (void *)3, vRadioRefreshCallback);
     while(1) {
         lcdControlData_t lcdData = {0};
-    
+
         if(xSemaphoreTake(xSemaphRadioPacketReady, 10) == pdTRUE) {
             xTimerStart(xRadioRefreshTimer, 0);
+            
+            if(radioData.operations.payload.common.controller != controller) {
+                controller = (radioController_t)radioData.operations.payload.common.controller;
+                xTimerChangePeriod(xRadioRefreshTimer, radioIntervalDelay[controller], 0);
+            }
 
-            if(radioData.operations.payload.function == RADIO_OP_DRIVE) {
+            if(radioData.operations.payload.operation == RADIO_OP_DRIVE) {
                 driveControlData_t driveControlData = {0};
 
-                driveControlData.operation = radioData.operations.payload.driveData.operation;
-                driveControlData.speed_0   = radioData.operations.payload.driveData.speed_0;
-                driveControlData.speed_1   = radioData.operations.payload.driveData.speed_1;
-
-                //printf("Radio |drive| operation: %d/%d/%d\n\r",
-                    //driveControlData.operation, driveControlData.speed_0, driveControlData.speed_1);
+                driveControlData.direction  = radioData.operations.payload.driveData.direction;
+                driveControlData.speed_0    = radioData.operations.payload.driveData.speed_0;
+                driveControlData.speed_1    = radioData.operations.payload.driveData.speed_1;
                 xQueueSend(xQueueDriveControlCmd, (void *)&driveControlData, 0);
+                
+                if(isOperationWaiting(&radioOperationQueue, RADIO_OP_DRIVE) == false) {
+                    lcdData.operation = LCD_OP_DRIVE;
+                    lcdData.state = LCD_MV_IN_MOTION;
+                }
             }
-            else if(radioData.operations.payload.function == RADIO_OP_LIGHTING) {
+            else if(radioData.operations.payload.operation == RADIO_OP_LIGHTING) {
                 vLighting_RF_Control(radioData.operations.payload.lightingData.lightingType, radioData.operations.payload.lightingData.lightingState);
             }
-            else if(radioData.operations.payload.function == RADIO_OP_SOUND_SIG) {
-                // new packet should be received within 30ms (set 10ms more for safety)
-                // trigger timer to disable sound signal when 40ms time is depleted and on signal is not sustained
-                if(lastOperation != RADIO_OP_SOUND_SIG) {
+            else if(radioData.operations.payload.operation == RADIO_OP_SOUND_SIG) {
+                if(isOperationWaiting(&radioOperationQueue, RADIO_OP_SOUND_SIG) == false) {
                     vSound_Signal_RF_Control(radioData.operations.payload.soundSignalData.soundSignalStatus);
                     lcdData.operation = LCD_OP_SOUND_SIG;
                     lcdData.state = LCD_SOUND_ON;
                 }
             }
-            else if(radioData.operations.payload.function == RADIO_OP_HEARTBEAT) {
+            else if(radioData.operations.payload.operation == RADIO_OP_HEARTBEAT) {
                 // heartbeat signal for diagnosis purpuses on controller side, do nothing
             }
             else {
                 // unsupported case, do nothing
             }
             
-            lastOperation = radioData.operations.payload.function;
+            addOperation(&radioOperationQueue, (RadioOperation_t)radioData.operations.payload.operation);
+            //lastOperation = radioData.operations.payload.function;
             //printf("Sig: %d, %d\r\n", radioData.operations.payload.function, radioData.operations.payload.soundSignalData.soundSignalStatus);
         }
         else if(startRadioRefresh == true) {
             startRadioRefresh = false;
 
-            if(lastOperation == RADIO_OP_SOUND_SIG) {
-                // there is no sound signal package received so suppress horn
-                vSound_Signal_RF_Control(SOUND_RF_NONE);
-                lcdData.operation = LCD_OP_SOUND_SIG;
-                lcdData.state = LCD_SOUND_OFF;
-                lastOperation = RADIO_OP_NONE;
+            while(1) {
+                RadioOperation_t operation = getOperation(&radioOperationQueue);
+                if(operation == RADIO_CTRL_NONE) {
+                    break;
+                }
+                else {
+                    if(operation == RADIO_OP_DRIVE) {
+                        driveControlData_t driveControlData = {0};
+
+                        driveControlData.direction = DRIVE_OP_STOPPED;
+                        driveControlData.speed_0   = 0;
+                        driveControlData.speed_1   = 0;
+                        xQueueSend(xQueueDriveControlCmd, (void *)&driveControlData, 0);
+                        
+                        lcdData.operation = LCD_OP_DRIVE;
+                        lcdData.state = LCD_MV_STOPPED;
+                    }
+                    else if(operation == RADIO_OP_SOUND_SIG) {
+                        // there is no sound signal package received so suppress horn
+                        vSound_Signal_RF_Control(SOUND_RF_NONE);
+                        lcdData.operation = LCD_OP_SOUND_SIG;
+                        lcdData.state = LCD_SOUND_OFF;
+                        printf("off\r\n");
+                    }
+                    else {
+                        // unsupported operation, do nothing
+                    }
+                }
             }
         }
         else {
             // no action defined
         }
-        
+
         if(lcdData.operation != LCD_OP_NONE) {
             xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
         }

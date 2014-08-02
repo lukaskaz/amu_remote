@@ -52,14 +52,11 @@ typedef enum
 *******************************************************************************/
 void vConsoleInterfaceTask(void * pvArg)
 {
-    FILE * pFile;
     menuLevel_t menuLevel = MENU_MAIN, menuLevelSel = MENU_MAIN;
 
-    vSound_Configuration();
-    vLighting_Configuration();
     while(1)
     {
-        if(menuLevel != menuLevelSel || getc(pFile) == 0x1B )
+        if(menuLevel != menuLevelSel || getchar() == 0x1B )
         {
             menuLevel = menuLevelSel;
             switch(menuLevel) {
@@ -77,7 +74,7 @@ void vConsoleInterfaceTask(void * pvArg)
                            "--------------------------\n\r"
                            " Selection/> ");
 
-                    menuLevelSel = (menuLevel_t)getc(pFile);
+                    menuLevelSel = (menuLevel_t)getchar();
                     break;
                 case MENU_MOVEMENT:
                     vDrive_Console();
@@ -96,7 +93,7 @@ void vConsoleInterfaceTask(void * pvArg)
                     menuLevelSel = MENU_MAIN;
                     break;
                 default:
-                    printf("selected menu not implemented or not supported!\n\r");
+                    printf("selected menu not supported!\n\r");
                     menuLevelSel = MENU_MAIN;
             }
         }

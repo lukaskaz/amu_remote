@@ -75,6 +75,7 @@
 #define LCD_DATA_QUEUE_SIZE    10U
 
 static bool lcdStartScrSaver = false;
+static bool lcdClearScreen   = false;
 
 xQueueHandle xQueueLcdControl = NULL;
 
@@ -87,6 +88,7 @@ static int ZtScI2cMxReadState(void);
 static int ZtScI2cMxReadVersion(uint8_t * vbuff);
 static int ZtScI2cMxDisplay8x16Str(uint8_t page, uint8_t column, const char *str);
 static int ZtScI2cMxFillArea(uint8_t spage, uint8_t epage, uint8_t scolumn, uint8_t ecolumn, uint8_t filldata);
+static int ZtScI2cMxClearScreen(void);
 static int ZtScI2cMxScrollingHorizontal(uint8_t lr, uint8_t spage, uint8_t epage, uint8_t frames);
 static int ZtScI2cMxScrollingVertical(uint8_t scrollupdown, uint8_t rowsfixed, uint8_t rowsscroll, uint8_t scrollstep, uint8_t stepdelay);
 static int ZtScI2cMxScrollingVerticalHorizontal(uint8_t Sdirection, uint8_t spage, uint8_t epage, uint8_t fixedarea, uint8_t scrollarea, uint8_t offset, uint8_t frames);
@@ -170,6 +172,11 @@ static int ZtScI2cMxFillArea(uint8_t spage, uint8_t epage, uint8_t scolumn, uint
     buff[4] = ecolumn;
     buff[5] = filldata;
     return xI2C_write_sequence(addr, buff, 6);
+}
+
+static int ZtScI2cMxClearScreen(void)
+{
+    ZtScI2cMxFillArea(0, 8, 0, 128, 0x00);
 }
 
 static int ZtScI2cMxScrollingHorizontal(uint8_t lr, uint8_t spage, uint8_t epage, uint8_t frames)
@@ -360,6 +367,11 @@ void vLcdScrSaverCallback(xTimerHandle pxTimer)
     lcdStartScrSaver = true;
 }
 
+void vLcdClearScrCallback(xTimerHandle pxTimer)
+{
+    lcdClearScreen = true;
+}
+
 /*******************************************************************************
 * Function Name  : vLcdInterfaceTask
 * Description    : Lcd interface main routine
@@ -371,6 +383,7 @@ void vLcdScrSaverCallback(xTimerHandle pxTimer)
 void vLcdInterfaceTask(void * pvArg)
 {
     xTimerHandle xLcdScrSaverTimer;
+    xTimerHandle xLcdClearScreenTimer;
     vLCD_Configuration();
     xQueueLcdControl = xQueueCreate(LCD_DATA_QUEUE_SIZE, sizeof(lcdControlData_t));
 
@@ -378,6 +391,7 @@ void vLcdInterfaceTask(void * pvArg)
     ZtScI2cMxDisplay8x16Str(4, 0, "   Welcome :)   ");
 
     xLcdScrSaverTimer = xTimerCreate((signed char *)"Lcd SS timer", 10000, pdFALSE, (void *)1, vLcdScrSaverCallback);
+    xLcdClearScreenTimer = xTimerCreate((signed char *)"Lcd clear screen timer", 3000, pdFALSE, (void *)4, vLcdClearScrCallback);
     xTimerStart(xLcdScrSaverTimer, 0);
     
     while(1)
@@ -387,45 +401,99 @@ void vLcdInterfaceTask(void * pvArg)
         if(xQueueReceive(xQueueLcdControl, &lcdData, 50U) == pdTRUE) {
             xTimerStart(xLcdScrSaverTimer, 0);
             
-            if(lcdData.operation == LCD_OP_SOUND_SIG) {
+            if(lcdData.operation == LCD_OP_DRIVE) {
+                if(lcdData.state == LCD_MV_IN_MOTION) {
+                    ZtScI2cMxClearScreen();
+                    ZtScI2cMxDisplay8x16Str(3, 0, "    <<<<<<<<    ");
+                    vTaskDelay(2);
+                    ZtScI2cMxDeactivateScroll();
+                    ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
+                    xTimerStop(xLcdScrSaverTimer, 0);
+                }
+                else if(lcdData.state == LCD_MV_STOPPED) {
+                    ZtScI2cMxDeactivateScroll();
+                    ZtScI2cMxClearScreen();
+                }
+                else {
+                    // unsupported state, do nothing
+                }
+            }
+            else if(lcdData.operation == LCD_OP_SOUND_SIG) {
                 if(lcdData.state == LCD_SOUND_ON) {
-                    ZtScI2cMxFillArea(0, 8, 0, 128, 0x00);
+                    ZtScI2cMxClearScreen();
                     ZtScI2cMxDisplay8x16Str(3, 0, "  HORN ENABLED  ");
                     vTaskDelay(2);
                     ZtScI2cMxDeactivateScroll();
                     ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
+                    xTimerStop(xLcdScrSaverTimer, 0);
+                }
+                else if(lcdData.state == LCD_SOUND_OFF) {
+                    ZtScI2cMxDeactivateScroll();
+                    ZtScI2cMxClearScreen();
                 }
                 else {
-                    ZtScI2cMxDeactivateScroll();
-                    ZtScI2cMxFillArea(0, 8, 0, 128, 0x00);
+                    // unsupported state, do nothing
                 }
             }
-            if(lcdData.operation == LCD_OP_COLLISION) {
+            else if(lcdData.operation == LCD_OP_COLLISION) {
                 if(lcdData.state == LCD_COLLIS_ON) {
-                        ZtScI2cMxFillArea(0, 8, 0, 128, 0x00);
-                        ZtScI2cMxDisplay8x16Str(3, 0, "  COLLISION !!  ");
-                        ZtScI2cMxScrollingVertical(SCROLL_UP, 0, 64, 1, 250);
-                        //vTaskDelay(2);
-                        //ZtScI2cMxDeactivateScroll();
-                        //ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
+                    ZtScI2cMxClearScreen();
+                    ZtScI2cMxDisplay8x16Str(3, 0, "  COLLISION !!  ");
+                    ZtScI2cMxScrollingVertical(SCROLL_UP, 0, 64, 1, 250);
+                    xTimerStart(xLcdClearScreenTimer, 0);
+                }
+            }
+            else if(lcdData.operation == LCD_OP_LIGHTING) {
+                if(lcdData.state == LCD_LIGHT_AUTO) {
+                    ZtScI2cMxClearScreen();
+                    ZtScI2cMxDisplay8x16Str(3, 0, "   AUTO LIGHT   ");
+                    vTaskDelay(2);
+                    ZtScI2cMxDeactivateScroll();
+                    ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
+                    xTimerStart(xLcdClearScreenTimer, 0);
+                }
+                else if(lcdData.state == LCD_LIGHT_MANUAL) {
+                    ZtScI2cMxClearScreen();
+                    ZtScI2cMxDisplay8x16Str(3, 0, "  MANUAL LIGHT  ");
+                    vTaskDelay(2);
+                    ZtScI2cMxDeactivateScroll();
+                    ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
+                    xTimerStart(xLcdClearScreenTimer, 0);
                 }
                 else {
-                    //ZtScI2cMxDeactivateScroll();
-                    ZtScI2cMxFillArea(0, 8, 0, 128, 0x00);
+                    // unsupported case, do nothing
                 }
+            }
+            else {
+                // unsupported operation, do nothing
             }
         }
         else {
-            char text[20+1] = {0};
-            extern volatile uint32_t power_pvd;
-    
-            snprintf(text, 20, "pvd: %d, %d", PWR_PVDLevelGet(), power_pvd); 
-            ZtScI2cMxDisplay8x16Str(3, 0, text);
+            // no lcd action pending, do nothing
         }
 
         if(lcdStartScrSaver == true) {
             lcdStartScrSaver = false;
             ZtScI2cMxDisplayArea(0, 8, 0, 128, robot);
+            
+            switch(get_battery_status()) {
+                case SEN_BAT_FULL:
+                    ZtScI2cMxDisplayArea(0, 2, 104, 128, battery_full);
+                    break;
+                case SEN_BAT_HALF:
+                    ZtScI2cMxDisplayArea(0, 2, 104, 128, battery_half);
+                    break;
+                case SEN_BAT_LOW:
+                    ZtScI2cMxDisplayArea(0, 2, 104, 128, battery_low);
+                    break;
+                default: {}
+                }
+        }
+        
+        if(lcdClearScreen == true) {
+            lcdClearScreen = false;
+            ZtScI2cMxDeactivateScroll();
+            ZtScI2cMxClearScreen();
         }
         
 //        ZtScI2cMxDeactivateScroll(ZTSCI2CMX_ADDRESS);
