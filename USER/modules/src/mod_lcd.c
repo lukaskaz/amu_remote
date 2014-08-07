@@ -400,15 +400,22 @@ void vLcdInterfaceTask(void * pvArg)
 
         if(xQueueReceive(xQueueLcdControl, &lcdData, 50U) == pdTRUE) {
             xTimerStart(xLcdScrSaverTimer, 0);
-            
+
             if(lcdData.operation == LCD_OP_DRIVE) {
                 if(lcdData.state == LCD_MV_IN_MOTION) {
-                    ZtScI2cMxClearScreen();
-                    ZtScI2cMxDisplay8x16Str(3, 0, "    <<<<<<<<    ");
-                    vTaskDelay(2);
-                    ZtScI2cMxDeactivateScroll();
-                    ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
-                    xTimerStop(xLcdScrSaverTimer, 0);
+                    if(xTimerIsTimerActive(xLcdClearScreenTimer) == pdFALSE) {
+                        ZtScI2cMxClearScreen();
+                        ZtScI2cMxDisplay8x16Str(3, 0, "    <<<<<<<<    ");
+                        vTaskDelay(2);
+                        ZtScI2cMxDeactivateScroll();
+                        ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
+                        xTimerStop(xLcdScrSaverTimer, 0);
+                        xTimerStop(xLcdClearScreenTimer, 0);
+                    }
+                    else {
+                        vTaskDelay(10);
+                        xQueueSend(xQueueLcdControl, (void *)&lcdData, 0);
+                    }
                 }
                 else if(lcdData.state == LCD_MV_STOPPED) {
                     ZtScI2cMxDeactivateScroll();
@@ -426,6 +433,7 @@ void vLcdInterfaceTask(void * pvArg)
                     ZtScI2cMxDeactivateScroll();
                     ZtScI2cMxScrollingHorizontal(SCROLL_LEFT, 3, 4, FRAMS_2);
                     xTimerStop(xLcdScrSaverTimer, 0);
+                    xTimerStop(xLcdClearScreenTimer, 0);
                 }
                 else if(lcdData.state == LCD_SOUND_OFF) {
                     ZtScI2cMxDeactivateScroll();
@@ -494,31 +502,9 @@ void vLcdInterfaceTask(void * pvArg)
             lcdClearScreen = false;
             ZtScI2cMxDeactivateScroll();
             ZtScI2cMxClearScreen();
+            // introduce 250ms pause in cleared screen between consecutive events
+            vTaskDelay(250);
         }
-        
-//        ZtScI2cMxDeactivateScroll(ZTSCI2CMX_ADDRESS);
-//        ZtScI2cMxScrollingHorizontal(ZTSCI2CMX_ADDRESS,SCROLL_LEFT,0,1,FRAMS_2);
-//        vTaskDelay(2000);
-
-//        ZtScI2cMxDeactivateScroll(ZTSCI2CMX_ADDRESS);
-//        ZtScI2cMxScrollingHorizontal(ZTSCI2CMX_ADDRESS,SCROLL_RIGHT,2,3,FRAMS_3);
-//        vTaskDelay(2000);
-
-//        ZtScI2cMxDeactivateScroll(ZTSCI2CMX_ADDRESS);
-//        ZtScI2cMxScrollingHorizontal(ZTSCI2CMX_ADDRESS,SCROLL_LEFT,4,5,FRAMS_4);
-//        vTaskDelay(2000);
-
-//        ZtScI2cMxDeactivateScroll(ZTSCI2CMX_ADDRESS);
-//        ZtScI2cMxScrollingHorizontal(ZTSCI2CMX_ADDRESS,SCROLL_RIGHT,6,7,FRAMS_5);
-//        vTaskDelay(2000);
-
-//        ZtScI2cMxDeactivateScroll(ZTSCI2CMX_ADDRESS);
-//        ZtScI2cMxScrollingHorizontal(ZTSCI2CMX_ADDRESS,SCROLL_LEFT,0,7,FRAMS_2);
-//        vTaskDelay(2000);
-
-//        ZtScI2cMxDeactivateScroll(ZTSCI2CMX_ADDRESS);
-//        ZtScI2cMxScrollingHorizontal(ZTSCI2CMX_ADDRESS,SCROLL_RIGHT,0,7,FRAMS_4);
-//        vTaskDelay(2000);
     }
 }
 

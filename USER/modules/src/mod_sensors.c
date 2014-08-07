@@ -36,11 +36,13 @@
 
 #define ADC1_DR_Address    ((uint32_t)0x4001244C)
 
-#define ILLUM_NONE_TRIG     70.0f
-#define ILLUM_MIN_TRIG      50.0f
-#define ILLUM_MID_TRIG      30.0f
-#define ILLUM_MAX_TRIG      10.0f
-
+typedef enum {
+    SEN_ILLUM_NONE = 10,
+    SEN_ILLUM_MIN  = 20,
+    SEN_ILLUM_MID  = 45,
+    SEN_ILLUM_MAX  = 70,
+    SEN_ILLUM_HIS  = 2,
+} sensorIllumination_t;
 
 typedef enum {
     SEN_VOLT_2V2 = 0,
@@ -59,7 +61,6 @@ static void vVoltageDetector_configuration(void);
 static double get_internal_temp(void);
 static double get_illumination(void);
 static uint8_t PWR_PVDLevelGet(void);
-static void adjust_auto_lighting(void);
 
 uint16_t ADC_ConvertedData[8] = {0};
 double SensorsMeasurements[2] = {0};
@@ -68,23 +69,76 @@ bool sensorCollisionDisable   = false;
 SensorType_t sensorInUse      = SENSOR_NONE;
 
 
-static void adjust_auto_lighting(void)
+void adjust_auto_lighting(void)
 {
+    static sensorIllumination_t currIllumination = SEN_ILLUM_MAX;
+    
     if(isLightingAutoModeEnabled() == true) {
         double illumination = get_illumination();
-
-        if(illumination > ILLUM_NONE_TRIG) {
-            vLighting_Auto_Control(LIGHT_AUTO_NONE);
+        char test[20+1] = {0};
+    
+        snprintf(test, 20,"ill:%f", illumination);
+        //printf("illumiantion: %f, %d\r\n", illumination, currIllumination);
+        if(illumination > SEN_ILLUM_MAX) {
+            if(currIllumination != SEN_ILLUM_MAX) {
+                if(illumination > (SEN_ILLUM_MAX + SEN_ILLUM_HIS)) {
+                    currIllumination = SEN_ILLUM_MAX;
+                    vLighting_Auto_Control(LIGHT_AUTO_NONE);
+                }
+                else {
+                    // fluctuations in max and mid levels, do nothing
+                }
+            }
+            else {
+                // lightning disable peak case, do nothing
+            }
         }
-        else if(illumination > ILLUM_MIN_TRIG) {
-            vLighting_Auto_Control(LIGHT_AUTO_MIN);
+        else if(illumination > SEN_ILLUM_MID) {
+            if(currIllumination > SEN_ILLUM_MID) {
+                currIllumination = SEN_ILLUM_MID;
+                vLighting_Auto_Control(LIGHT_AUTO_MIN);
+            }
+            else if(currIllumination == SEN_ILLUM_MID) {
+                // lightning minimum case, do nothing
+            }
+            else if(illumination > (SEN_ILLUM_MID + SEN_ILLUM_HIS)) {
+                // case for illumination below medium
+                currIllumination = SEN_ILLUM_MID;
+                vLighting_Auto_Control(LIGHT_AUTO_MIN);
+            }
+            else {
+                // fluctuations in mid and min levels, do nothing
+            }
         }
-        else if(illumination > ILLUM_MID_TRIG) {
-            vLighting_Auto_Control(LIGHT_AUTO_MEDIUM);
+        else if(illumination > SEN_ILLUM_MIN) {
+            if(currIllumination > SEN_ILLUM_MIN) {
+                currIllumination = SEN_ILLUM_MIN;
+                vLighting_Auto_Control(LIGHT_AUTO_MEDIUM);
+            }
+            else if(currIllumination == SEN_ILLUM_MIN) {
+                // lightning medium case, do nothing
+            }
+            else if(illumination > (SEN_ILLUM_MIN + SEN_ILLUM_HIS)) {
+                // case for illumination below minimum
+                currIllumination = SEN_ILLUM_MIN;
+                vLighting_Auto_Control(LIGHT_AUTO_MEDIUM);
+            }
+            else {
+                // fluctuations in min and none levels, do nothing
+            }
         }
         else {
-            vLighting_Auto_Control(LIGHT_AUTO_MAX);
+            if(currIllumination != SEN_ILLUM_NONE) {
+                currIllumination = SEN_ILLUM_NONE;
+                vLighting_Auto_Control(LIGHT_AUTO_MAX);
+            }
+            else {
+                // lightning off case, do nothing
+            }
         }
+    }
+    else {
+        currIllumination = SEN_ILLUM_MAX;
     }
 }
 

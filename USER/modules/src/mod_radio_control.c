@@ -56,6 +56,7 @@ typedef struct {
 
 void vRadio_configuration(void);
 static bool isOperationWaiting(const radioOperationQueue_t *queue, const RadioOperation_t op);
+static bool releaseOperation(radioOperationQueue_t *queue, const RadioOperation_t op);
 static void addOperation(radioOperationQueue_t *queue, const RadioOperation_t op);
 static RadioOperation_t getOperation(radioOperationQueue_t *queue);
 
@@ -72,6 +73,26 @@ static bool isOperationWaiting(const radioOperationQueue_t *queue, const RadioOp
     
     for(i=0; i<queue->operationPos; i++) {
         if(queue->operation[i] == op) {
+            fresult = true;
+            break;
+        }
+    }
+
+    return fresult;
+}
+
+static bool releaseOperation(radioOperationQueue_t *queue, const RadioOperation_t op)
+{
+    bool fresult = false;
+    uint8_t i = 0;
+    
+    for(i=0; i<queue->operationPos; i++) {
+        if(queue->operation[i] == op) {
+            queue->operationPos--;
+            for(; i<queue->operationPos; i++) {
+                queue->operation[i] = queue->operation[i+1];
+            }
+            queue->operation[i] = RADIO_OP_NONE;
             fresult = true;
             break;
         }
@@ -130,7 +151,7 @@ void vRadio_configuration(void)
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
     //configure USART
-    USART_InitStructure.USART_BaudRate   = 57600;
+    USART_InitStructure.USART_BaudRate   = 125000;
     USART_InitStructure.USART_WordLength = USART_WordLength_9b;
     USART_InitStructure.USART_StopBits   = USART_StopBits_1;
     USART_InitStructure.USART_Parity     = USART_Parity_No;
@@ -185,6 +206,13 @@ void vRadio_Control(void *pvArg)
                     lcdData.operation = LCD_OP_DRIVE;
                     lcdData.state = LCD_MV_IN_MOTION;
                 }
+                if(isOperationWaiting(&radioOperationQueue, RADIO_OP_SOUND_SIG) == true) {
+                    releaseOperation(&radioOperationQueue, RADIO_OP_SOUND_SIG);
+                    vSound_Signal_RF_Control(SOUND_RF_NONE);
+
+                    lcdData.operation = LCD_OP_DRIVE;
+                    lcdData.state = LCD_MV_IN_MOTION;
+                }
             }
             else if(radioData.operations.payload.operation == RADIO_OP_LIGHTING) {
                 vLighting_RF_Control(radioData.operations.payload.lightingData.lightingType, radioData.operations.payload.lightingData.lightingState);
@@ -209,7 +237,8 @@ void vRadio_Control(void *pvArg)
         }
         else if(startRadioRefresh == true) {
             startRadioRefresh = false;
-
+            
+            printf("off\r\n");
             while(1) {
                 RadioOperation_t operation = getOperation(&radioOperationQueue);
                 if(operation == RADIO_CTRL_NONE) {
@@ -232,7 +261,6 @@ void vRadio_Control(void *pvArg)
                         vSound_Signal_RF_Control(SOUND_RF_NONE);
                         lcdData.operation = LCD_OP_SOUND_SIG;
                         lcdData.state = LCD_SOUND_OFF;
-                        printf("off\r\n");
                     }
                     else {
                         // unsupported operation, do nothing

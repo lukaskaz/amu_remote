@@ -183,14 +183,14 @@ static void vNVIC_configuration(void)
 
     // interruption for radio RF usart
     NVIC_InitStructure.NVIC_IRQChannel                   = USART1_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 11;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 12;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
     //interruption for USB
     NVIC_InitStructure.NVIC_IRQChannel                   = USB_LP_CAN1_RX0_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 12;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 13;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
@@ -198,14 +198,14 @@ static void vNVIC_configuration(void)
     // interruption for distance sensor time measurements
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_3);
     NVIC_InitStructure.NVIC_IRQChannel                   = TIM4_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 13;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 14;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
     
     // interruption for ADC external trigger
     NVIC_InitStructure.NVIC_IRQChannel                   = TIM1_CC_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 14;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 15;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority        = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd                = ENABLE;
     NVIC_Init(&NVIC_InitStructure);

@@ -26,6 +26,7 @@ typedef enum {
 extern void vSensorsServiceTask(void * pvArg);
 extern void vCheckSupplyVoltage(FlagStatus PVDO);
 extern sensorBattery_t get_battery_status(void);
+extern void adjust_auto_lighting(void);
 
 extern double distance[];
 extern SensorType_t sensorInUse;

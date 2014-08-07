@@ -24,6 +24,7 @@
 #include "mod_lighting.h"
 #include "stm32f10x.h"
 #include "mod_lcd.h"
+#include "mod_sensors.h"
 
 typedef enum {
     LIGHT_MODE_MANUAL = 0,
@@ -51,7 +52,7 @@ typedef enum {
     LIGHT_RF_ENABLE,
 } LightState_t;
 
-static lightMode_t currentLightMode = LIGHT_MODE_MANUAL;
+static lightMode_t currentLightMode = LIGHT_MODE_AUTO;
 
 static void resetLightingToDefaults(void);
 static void adjustLightingMode(void);
@@ -94,7 +95,7 @@ static void adjustLightingMode(void)
         currentLightMode = LIGHT_MODE_MANUAL;
         lcdData.operation = LCD_OP_LIGHTING;
         lcdData.state = LCD_LIGHT_MANUAL;
-
+        adjust_auto_lighting();
     }
     
     if(lcdData.operation != LCD_OP_NONE) {
