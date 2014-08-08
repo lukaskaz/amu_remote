@@ -7,6 +7,7 @@
 #ifndef MOD_RADIO_CONTROL_H
 #define MOD_RADIO_CONTROL_H
 
+#include <stdbool.h>
 #include "stm32f10x.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -65,6 +66,7 @@ typedef enum {
 
 
 extern void vRadio_Control(void *pvArg);
+extern bool is_radio_data_checksum_correct(const radioData_t *const data);
 
 extern radioData_t radioData;
 extern xSemaphoreHandle xSemaphRadioPacketReady;

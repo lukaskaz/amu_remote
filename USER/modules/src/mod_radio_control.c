@@ -41,6 +41,9 @@
 #define RADIO_CTRL_MS_INTERVAL_BLUETOOTH  120U
 #define RADIO_OP_QUEUE_SIZE               4U
 
+#define RADIO_BYTES_FOR_CS                (RADIO_FRAME_SIZE - 1U)
+
+
 typedef enum {
     RADIO_OP_NONE = 0,
     RADIO_OP_DRIVE,
@@ -59,6 +62,7 @@ static bool isOperationWaiting(const radioOperationQueue_t *queue, const RadioOp
 static bool releaseOperation(radioOperationQueue_t *queue, const RadioOperation_t op);
 static void addOperation(radioOperationQueue_t *queue, const RadioOperation_t op);
 static RadioOperation_t getOperation(radioOperationQueue_t *queue);
+static uint8_t radio_data_checksum_calculate(const radioData_t *const data);
 
 xSemaphoreHandle xSemaphRadioPacketReady = NULL;
 bool startRadioRefresh = false;
@@ -278,6 +282,26 @@ void vRadio_Control(void *pvArg)
     }
 }
 
+bool is_radio_data_checksum_correct(const radioData_t *const data)
+{
+    if( data->operations.checksum == radio_data_checksum_calculate(data)) {
+        return true;
+    }
+
+    return false;
+}
+
+static uint8_t radio_data_checksum_calculate(const radioData_t *const data)
+{
+    uint16_t checksum = 0, i = 0;
+
+    for(i=0; i<RADIO_BYTES_FOR_CS; i++) {
+        checksum += data->radioRxFrameBuffer[i];
+    }
+
+    checksum = (uint8_t)((checksum^0xFF) + 1);
+    return checksum;
+}
 
 
 /*********************************************************************************************************

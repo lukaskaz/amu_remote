@@ -166,7 +166,7 @@ void USB_LP_CAN1_RX0_IRQHandler(void)
 void USART1_IRQHandler(void)
 {
     static uint8_t frameCellPos = 0;
-    static uint16_t frame[20] = {0};
+    static int16_t frame[20] = {0};
     
     if(USART_GetFlagStatus(USART1, USART_FLAG_TC) == SET) {
         USART_ClearFlag(USART1, USART_FLAG_TC);
@@ -177,7 +177,6 @@ void USART1_IRQHandler(void)
         uint16_t data = USART_ReceiveData(USART1);
         USART_ClearFlag(USART1, USART_FLAG_RXNE);
 
-        //printf("%d/%d ", frameCellPos, data);
         frame[frameCellPos] = data;
         if(data == RADIO_UART_MASTER_ADDRESS) {
             // ignore the first received byte (uart target address)
@@ -194,10 +193,17 @@ void USART1_IRQHandler(void)
                 
                 for(i=0; i<RADIO_FRAME_SIZE+1; i++) {
                     printf("%d/%d ", i, frame[i]);
+                    frame[i] = -1;
                 }
                 printf("\r\n");
-                xSemaphoreGiveFromISR(xSemaphRadioPacketReady, &xHigherPriorityTaskWoken);
-                portEND_SWITCHING_ISR(xHigherPriorityTaskWoken);
+                
+                if(is_radio_data_checksum_correct(&radioData) == true) {
+                    xSemaphoreGiveFromISR(xSemaphRadioPacketReady, &xHigherPriorityTaskWoken);
+                    portEND_SWITCHING_ISR(xHigherPriorityTaskWoken);
+                }
+                else {
+                    printf("Radio data checksum incorrect, neglecing frame!\r\n");
+                }
             }
         }
     }
