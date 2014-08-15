@@ -420,6 +420,7 @@ void vLcdInterfaceTask(void * pvArg)
                 else if(lcdData.state == LCD_MV_STOPPED) {
                     ZtScI2cMxDeactivateScroll();
                     ZtScI2cMxClearScreen();
+                    xQueueReset(xQueueLcdControl);
                 }
                 else {
                     // unsupported state, do nothing
